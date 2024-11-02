@@ -30,7 +30,7 @@ def setup_logging(level):
 
 def run_single_simulation(args, script_name: str, strategy: str, update_rule: str, optimistic_initial_value: float=None, gradient_alpha: float=None, epsilon: float = None, c: float = None, use_baseline: int=None):
     command = [
-        "python", str(script_name),  
+        "python3", str(script_name),  
         "--seed", str(args.seed),
         "--iterations", str(args.iterations),
         "--runs", str(args.runs),
@@ -177,7 +177,7 @@ if __name__ == "__main__":
     parser.add_argument('--k', type=int, default=10, help='Number of bandits.')
     parser.add_argument('--alpha', type=float, default=0.01, help='Alpha step size inside the exponential decay')
     parser.add_argument('--gradient-alphas', nargs="+", type=float, default=[0.1, 0.01], help='List of gradient alphas for softmax-preferences')
-    parser.add_argument('--optimistic-initial-values', nargs="+", type=int, default=[0,10], help="List of optimistic initial values to use for epsilon greedy.")
+    parser.add_argument('--optimistic-initial-values', nargs="+", type=float, default=[0.0,10.0], help="List of optimistic initial values to use for epsilon greedy.")
     parser.add_argument('--use-baselines', nargs="+", type=int, default=[0, 1], help="List of use baselines options for softmax-preferences.")
 
 

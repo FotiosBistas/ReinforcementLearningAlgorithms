@@ -56,6 +56,7 @@ def run(arguments):
     else:
         teleports = {}
 
+    _logger.info(f"Teleports: {teleports}")
 
     #define the actions left, right, up, down
     #this will be added to a position inside an array
