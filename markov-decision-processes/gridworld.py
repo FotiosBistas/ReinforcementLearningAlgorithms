@@ -1,7 +1,10 @@
-from pprint import pprint
 import logging
 import argparse
 import numpy as np
+import matplotlib.pyplot as plt
+
+
+from pprint import pprint
 
 logging.basicConfig(
     format='%(filename)s - %(asctime)s - %(levelname)s - %(message)s'
@@ -10,6 +13,28 @@ logging.basicConfig(
 _logger = logging.getLogger()
 _logger.setLevel("DEBUG")
 
+def plot_grid_values(x):
+    fig, ax = plt.subplots()
+    heatmap = ax.imshow(x, cmap="coolwarm", interpolation="nearest")
+
+    # Loop over data dimensions and create text annotations.
+    for i in range(x.shape[0]):
+        for j in range(x.shape[1]):
+            ax.text(j, i, f"{x[i, j]:.1f}", ha="center", va="center", color="black", fontsize=8, fontweight='bold')
+
+    # Add color bar
+    cbar = ax.figure.colorbar(heatmap, ax=ax)
+    cbar.ax.set_ylabel("Value", rotation=-90, va="bottom")
+
+    # Labels and formatting
+    ax.set_title("Grid Values of x (Result Array)")
+    ax.set_xticks(np.arange(x.shape[1]))
+    ax.set_yticks(np.arange(x.shape[0]))
+    ax.set_xticklabels(range(x.shape[1]))
+    ax.set_yticklabels(range(x.shape[0]))
+
+    plt.show()
+    plt.savefig("./grid_values.png")
 
 def run(arguments):
 
@@ -119,6 +144,8 @@ def run(arguments):
 
     _logger.info("Result matrix:")
     pprint(x)
+
+    plot_grid_values(x=x)
 
 
 
