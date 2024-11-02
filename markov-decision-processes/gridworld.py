@@ -10,6 +10,9 @@ logging.basicConfig(
     format='%(filename)s - %(asctime)s - %(levelname)s - %(message)s'
 )
 
+logging.getLogger('matplotlib').setLevel(logging.WARNING)
+
+
 _logger = logging.getLogger()
 _logger.setLevel("DEBUG")
 
