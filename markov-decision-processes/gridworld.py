@@ -16,7 +16,7 @@ logging.getLogger('matplotlib').setLevel(logging.WARNING)
 _logger = logging.getLogger()
 _logger.setLevel("DEBUG")
 
-def plot_grid_values(x):
+def plot_grid_values(x, name="grid_values.png"):
     fig, ax = plt.subplots()
     heatmap = ax.imshow(x, cmap="coolwarm", interpolation="nearest")
 
@@ -37,7 +37,45 @@ def plot_grid_values(x):
     ax.set_yticklabels(range(x.shape[0]))
 
     plt.show()
-    plt.savefig("./grid_values.png")
+    plt.savefig(f"./{name}")
+
+
+def plot_a_matrix(matrix):
+    fig, ax = plt.subplots(figsize=(16, 16))  # Significantly larger figure size
+    cax = ax.matshow(matrix, cmap="coolwarm", aspect='auto')  # Adjust aspect to 'auto' for more space
+
+    fig.colorbar(cax)
+
+    # Annotate each cell with the value if it is non-zero
+    for i in range(matrix.shape[0]):
+        for j in range(matrix.shape[1]):
+            value = matrix[i, j]
+            if value != 0:  # Skip zero values to reduce clutter
+                ax.text(j, i, f"{value:.3f}", va="center", ha="center", color="black", fontsize=6)  # Small font size
+
+    ax.set_title("Heatmap of A Matrix", fontsize=16)  # Larger title font
+    plt.xlabel("Columns", fontsize=12)
+    plt.ylabel("Rows", fontsize=12)
+    plt.xticks(fontsize=10)
+    plt.yticks(fontsize=10)
+    plt.savefig("./a_matrix.png")
+
+
+# Plot for b_matrix
+def plot_b_matrix(vector):
+    fig, ax = plt.subplots(figsize=(10, 2))
+    cax = ax.matshow(vector.reshape(1, -1), cmap="coolwarm", aspect="auto")
+    fig.colorbar(cax, orientation="horizontal")
+
+    # Annotate each cell with the value
+    for i in range(len(vector)):
+        ax.text(i, 0, f"{vector[i]:.2f}", va="center", ha="center", color="black", fontsize=8)
+
+    ax.set_title("Heatmap of B Matrix (Vector)")
+    plt.xlabel("Index")
+    plt.yticks([])  # Hide y-axis ticks for single row
+    plt.show()
+    plt.savefig("./b_matrix.png")
 
 def run(arguments):
 
@@ -143,12 +181,18 @@ def run(arguments):
 
     x = np.linalg.solve(temp, b_matrix)
     x = x.reshape(n, m)
-    x = np.round(x, decimals=1)
+    #x = np.round(x, decimals=1)
 
+    _logger.info("Result A matrix:")
+    pprint(temp)
+    _logger.info("Result b matrix:")
+    pprint(b_matrix)
     _logger.info("Result matrix:")
     pprint(x)
 
     plot_grid_values(x=x)
+    plot_a_matrix(matrix=temp)
+    plot_b_matrix(vector=b_matrix)
 
 
 
