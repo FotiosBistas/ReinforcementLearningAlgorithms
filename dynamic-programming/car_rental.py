@@ -19,8 +19,14 @@ _logger.setLevel("DEBUG")
 def policy_evaluation(
     state: Tuple[int, int],
     policy: int,
+    transfer_cost: float,
 ):
-    pass
+    returns = 0
+
+    # policy = action here
+    # The policy can be negative
+    returns -= transfer_cost * np.absolute(policy)
+
 
 def policy_improvement():
     pass
@@ -46,13 +52,16 @@ def policy_iteration(args):
     _logger.info(f"Initialized policies with shape: {policy.shape}")
     pprint(policy)
 
+    transfer_cost = args.transfer_cost
+    _logger.info(f"Transfer cost: {transfer_cost}")
+
     while True: 
         break
         value_change = 0
 
         for i in range(0, location_size_1):
             for j in range(0, location_size_2):
-                policy_evaluation(state=[i,j], policy=policy[i,j])
+                policy_evaluation(state=[i,j], policy=policy[i,j], transfer_cost=transfer_cost)
 
         if value_change < evaluation_change_threshold: 
             break
