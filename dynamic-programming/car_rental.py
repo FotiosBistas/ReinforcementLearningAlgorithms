@@ -4,6 +4,8 @@ import numpy as np
 
 from typing import Tuple
 from pprint import pprint
+from scipy.stats import poisson
+
 
 logging.basicConfig(
     format='%(filename)s - %(asctime)s - %(levelname)s - %(message)s'
@@ -15,17 +17,44 @@ logging.getLogger('matplotlib').setLevel(logging.WARNING)
 _logger = logging.getLogger()
 _logger.setLevel("DEBUG")
 
+def poisson_distribution(n: int, lambda_: float):
+    return poisson.pmf(k=n, mu=lambda_)
 
 def policy_evaluation(
     state: Tuple[int, int],
     policy: int,
     transfer_cost: float,
+    max_cars: Tuple[int, int],
+    return_rates: Tuple[int, int], 
+    request_rates: Tuple[int, int], 
+    discount_rate: float,
 ):
-    returns = 0
 
     # policy = action here
     # The policy can be negative
-    returns -= transfer_cost * np.absolute(policy)
+    reward = 0
+    reward -= transfer_cost * np.absolute(policy)
+
+    cars_first_loc = min(state[0] - policy, max_cars[0])
+    cars_second_loc = min(state[1] + policy, max_cars[1])
+
+    # rental requests
+    # loop through max cars since at most we can have max cars in the parking lot
+    for rental_request_first in range(max_cars[0] + 1):
+        for rental_request_second in range(max_cars[1] + 1):
+
+            joint_probability_combination = poisson_distribution(n=rental_request_first, lambda_=request_rates[0]) * poisson(n=rental_request_second, lambda_=request_rates[1])
+
+            # Invalidate over limit rental requests
+            valid_first = min(cars_first_loc, rental_request_first)
+            valid_second = min(cars_second_loc, rental_request_second)
+
+
+            cars_first_loc = cars_first_loc - valid_first
+            cars_second_loc = cars_second_loc - valid_second
+
+    return reward
+
 
 
 def policy_improvement():
@@ -55,15 +84,35 @@ def policy_iteration(args):
     transfer_cost = args.transfer_cost
     _logger.info(f"Transfer cost: {transfer_cost}")
 
+    location_return_rates = args.location_return_rates
+    _logger.info(f"Location return rates: {location_return_rates}")
+    location_request_rates = args.location_request_rates
+    _logger.info(f"Location request rates: {location_request_rates}")
+    discount_rate = args.discount_rate
+    _logger.info(f"Discount rate: {discount_rate}")
+
     while True: 
-        break
-        value_change = 0
 
-        for i in range(0, location_size_1):
-            for j in range(0, location_size_2):
-                policy_evaluation(state=[i,j], policy=policy[i,j], transfer_cost=transfer_cost)
+        delta = 0
 
-        if value_change < evaluation_change_threshold: 
+        for i in range(0, location_size_1 + 1):
+            for j in range(0, location_size_2 + 1):
+
+                new_value = policy_evaluation(
+                    state=(i,j), 
+                    policy=policy[i,j], 
+                    transfer_cost=transfer_cost,
+                    max_cars=(location_size_1, location_size_2),
+                    request_rates=(location_request_rates[0], location_request_rates[1]),
+                    return_rates=(location_return_rates[0], location_return_rates[1]),
+                    discount_rate=discount_rate,
+                )
+
+                delta = max(delta, np.absolute(value_function[i,j] - new_value))
+
+                value_function[i,j] = new_value
+
+        if delta < evaluation_change_threshold: 
             break
     pass
 
