@@ -20,6 +20,16 @@ _logger.setLevel("DEBUG")
 def poisson_distribution(n: int, lambda_: float):
     return poisson.pmf(k=n, mu=lambda_)
 
+def precompute_poisson_probabilities(max_cars: int, rates: Tuple[int, int]):
+    probs_first = [poisson_distribution(n, rates[0]) for n in range(max_cars + 1)]
+    probs_second = [poisson_distribution(n, rates[1]) for n in range(max_cars + 1)]
+    return np.array(probs_first), np.array(probs_second)
+
+def truncated_range(probabilities, threshold=1e-6):
+    return [i for i, p in enumerate(probabilities) if p.astype(float) > threshold]
+
+
+
 def policy_evaluation(
     state: Tuple[int, int],
     policy: int,
@@ -32,20 +42,29 @@ def policy_evaluation(
     rental_reward: float,
 ):
 
+    request_probs = precompute_poisson_probabilities(max_cars=max_cars[0], rates=request_rates)
+    return_probs = precompute_poisson_probabilities(max_cars=max_cars[1], rates=return_rates)
+
+    request_range = (truncated_range(request_probs[0]), truncated_range(request_probs[1]))
+    return_range = (truncated_range(return_probs[0]), truncated_range(return_probs[1]))
+
     # policy = action here
     # The policy can be negative
-    reward = 0
-    reward -= transfer_cost * np.absolute(policy)
+    returns = 0
+    returns -= transfer_cost * np.absolute(policy)
 
-    cars_first_loc = min(state[0] - policy, max_cars[0])
-    cars_second_loc = min(state[1] + policy, max_cars[1])
+    const_cars_first_loc = min(state[0] - policy, max_cars[0])
+    const_cars_second_loc = min(state[1] + policy, max_cars[1])
 
     # rental requests
     # loop through max cars since at most we can have max cars in the parking lot
-    for rental_request_first in range(max_cars[0] + 1):
-        for rental_request_second in range(max_cars[1] + 1):
+    for rental_request_first in request_range[0]:
+        for rental_request_second in request_range[1]:
 
-            joint_probability_combination = poisson_distribution(n=rental_request_first, lambda_=request_rates[0]) * poisson(n=rental_request_second, lambda_=request_rates[1])
+            joint_probability_combination = request_probs[0][rental_request_first] * request_probs[1][rental_request_second]
+
+            cars_first_loc = const_cars_first_loc
+            cars_second_loc = const_cars_second_loc
 
             # Invalidate over limit rental requests
             valid_first = min(cars_first_loc, rental_request_first)
@@ -54,26 +73,28 @@ def policy_evaluation(
             # Reward for renting
             reward = (valid_first + valid_second) * rental_reward
 
-            cars_first_loc = min(cars_first_loc - valid_first, 0)
-            cars_second_loc = min(cars_second_loc - valid_second, 0)
+            cars_first_loc = cars_first_loc - valid_first
+            cars_second_loc = cars_second_loc - valid_second
 
+            # Return
+            cars_first_loc = min(cars_first_loc + return_rates[0], max_cars[0])
+            cars_second_loc = min(cars_second_loc + return_rates[1], max_cars[1])
 
-            for return_cars_first in range(max_cars[0] + 1): 
-                for return_cars_second in range(max_cars[1] + 1):
-                    joint_probability_combination_return = ( 
-                        poisson_distribution(n=return_cars_first, lambda_=return_rates[0]) * 
-                        poisson_distribution(n=return_cars_second, lambda_=return_rates[1])
-                    )
+            returns += joint_probability_combination * (reward + discount_rate * value_function[int(cars_first_loc), int(cars_second_loc)])
 
-                    # Invalidate over limit returns
-                    cars_first_loc = min(cars_first_loc + return_cars_first, max_cars[0])
-                    cars_second_loc = min(cars_second_loc + return_cars_second, max_cars[1])
+            #for return_cars_first in return_range[0]: 
+            #    for return_cars_second in return_range[1]:
+            #        joint_probability_combination_return = return_probs[0][return_cars_first] * return_probs[1][return_cars_second]
 
-                    joint_probability_combination = joint_probability_combination * joint_probability_combination_return
+            #        # Invalidate over limit returns
+            #        cars_first_loc = min(cars_first_loc + return_cars_first, max_cars[0])
+            #        cars_second_loc = min(cars_second_loc + return_cars_second, max_cars[1])
 
-                    returns += joint_probability_combination * (reward * discount_rate * value_function[cars_first_loc, cars_second_loc])
+            #        joint_probability_combination = joint_probability_combination * joint_probability_combination_return
 
-    return reward
+            #        reward += joint_probability_combination * (reward + discount_rate * value_function[int(cars_first_loc), int(cars_second_loc)])
+
+    return returns
 
 
 
@@ -97,7 +118,7 @@ def policy_iteration(args):
     # a negative number indicates moving cars from second location to first location
     # a positive number indicates moving cars from first location to second location
     #TODO problematic if we have more than two parking lots
-    policy = np.zeros(value_function.shape)
+    policy = args.initial_policy * np.ones(value_function.shape)
     _logger.info(f"Initialized policies with shape: {policy.shape}")
     pprint(policy)
 
@@ -129,6 +150,7 @@ def policy_iteration(args):
                     return_rates=(location_return_rates[0], location_return_rates[1]),
                     discount_rate=discount_rate,
                     rental_reward=rental_reward,
+                    value_function=value_function,
                 )
 
                 delta = max(delta, np.absolute(value_function[i,j] - new_value))
@@ -137,7 +159,6 @@ def policy_iteration(args):
 
         if delta < evaluation_change_threshold: 
             break
-    pass
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Policy iteration for the Car Rental Problem")
