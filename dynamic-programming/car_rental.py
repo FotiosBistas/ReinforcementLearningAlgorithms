@@ -23,11 +23,13 @@ def poisson_distribution(n: int, lambda_: float):
 def policy_evaluation(
     state: Tuple[int, int],
     policy: int,
+    value_function: np.ndarray,
     transfer_cost: float,
     max_cars: Tuple[int, int],
     return_rates: Tuple[int, int], 
     request_rates: Tuple[int, int], 
     discount_rate: float,
+    rental_reward: float,
 ):
 
     # policy = action here
@@ -49,9 +51,27 @@ def policy_evaluation(
             valid_first = min(cars_first_loc, rental_request_first)
             valid_second = min(cars_second_loc, rental_request_second)
 
+            # Reward for renting
+            reward = (valid_first + valid_second) * rental_reward
 
-            cars_first_loc = cars_first_loc - valid_first
-            cars_second_loc = cars_second_loc - valid_second
+            cars_first_loc = min(cars_first_loc - valid_first, 0)
+            cars_second_loc = min(cars_second_loc - valid_second, 0)
+
+
+            for return_cars_first in range(max_cars[0] + 1): 
+                for return_cars_second in range(max_cars[1] + 1):
+                    joint_probability_combination_return = ( 
+                        poisson_distribution(n=return_cars_first, lambda_=return_rates[0]) * 
+                        poisson_distribution(n=return_cars_second, lambda_=return_rates[1])
+                    )
+
+                    # Invalidate over limit returns
+                    cars_first_loc = min(cars_first_loc + return_cars_first, max_cars[0])
+                    cars_second_loc = min(cars_second_loc + return_cars_second, max_cars[1])
+
+                    joint_probability_combination = joint_probability_combination * joint_probability_combination_return
+
+                    returns += joint_probability_combination * (reward * discount_rate * value_function[cars_first_loc, cars_second_loc])
 
     return reward
 
@@ -90,6 +110,8 @@ def policy_iteration(args):
     _logger.info(f"Location request rates: {location_request_rates}")
     discount_rate = args.discount_rate
     _logger.info(f"Discount rate: {discount_rate}")
+    rental_reward = args.rental_reward 
+    _logger.info(f"Rental reward: {rental_reward}")
 
     while True: 
 
@@ -106,6 +128,7 @@ def policy_iteration(args):
                     request_rates=(location_request_rates[0], location_request_rates[1]),
                     return_rates=(location_return_rates[0], location_return_rates[1]),
                     discount_rate=discount_rate,
+                    rental_reward=rental_reward,
                 )
 
                 delta = max(delta, np.absolute(value_function[i,j] - new_value))
