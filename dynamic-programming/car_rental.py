@@ -6,7 +6,6 @@ from typing import Tuple
 from pprint import pprint
 from scipy.stats import poisson
 from functools import lru_cache
-from concurrent.futures import ProcessPoolExecutor
 
 logging.basicConfig(
     format='%(filename)s - %(asctime)s - %(levelname)s - %(message)s'
@@ -27,7 +26,7 @@ def precompute_poisson_probabilities(max_cars: int, rates: Tuple[int, int]):
     probs_second = [poisson_distribution(n, rates[1]) for n in range(max_cars + 1)]
     return np.array(probs_first), np.array(probs_second)
 
-def truncated_range(probabilities, threshold=1e-4):
+def truncated_range(probabilities, threshold=1e-6):
     return [i for i, p in enumerate(probabilities) if p.astype(float) > threshold]
 
 
@@ -130,6 +129,7 @@ def policy_iteration(args):
     _logger.info(f"Iterations number: {iterations}")
 
     temp = 0
+
     while True and temp <= iterations: 
 
         while True: 
@@ -161,7 +161,7 @@ def policy_iteration(args):
 
                 # Can't move more cars than there are in the parking lot
                 possible_actions = np.arange(-min(j, args.transfer_limit), min(i, args.transfer_limit) + 1)
-
+                _logger.info(f"Possible actions: {possible_actions}")
                 # Argmax the action
                 returns = []
                 for action in possible_actions:
@@ -180,8 +180,10 @@ def policy_iteration(args):
                     )
 
                 # Select the best action
+                _logger.info(f"Action return: {returns}")
                 best_action = possible_actions[np.argmax(returns)]
-
+                _logger.info(f"Best action: {best_action} for state: {(i,j)} with old action: {old_action}")
+                policy[i, j] = best_action
                 if old_action != best_action:
                     policy_stable = False
 
@@ -191,7 +193,7 @@ def policy_iteration(args):
             break
 
         temp = temp + 1
-
+    
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Policy iteration for the Car Rental Problem")
