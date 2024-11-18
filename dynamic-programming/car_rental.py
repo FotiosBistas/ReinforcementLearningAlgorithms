@@ -6,8 +6,7 @@ from typing import Tuple
 from pprint import pprint
 from scipy.stats import poisson
 from functools import lru_cache
-
-
+from concurrent.futures import ProcessPoolExecutor
 
 logging.basicConfig(
     format='%(filename)s - %(asctime)s - %(levelname)s - %(message)s'
@@ -28,7 +27,7 @@ def precompute_poisson_probabilities(max_cars: int, rates: Tuple[int, int]):
     probs_second = [poisson_distribution(n, rates[1]) for n in range(max_cars + 1)]
     return np.array(probs_first), np.array(probs_second)
 
-def truncated_range(probabilities, threshold=1e-6):
+def truncated_range(probabilities, threshold=1e-4):
     return [i for i, p in enumerate(probabilities) if p.astype(float) > threshold]
 
 
@@ -94,10 +93,6 @@ def policy_evaluation(
     return returns
 
 
-
-def policy_improvement():
-    pass
-
 def policy_iteration(args):
 
     location_size_1, location_size_2 = args.location_sizes 
@@ -131,36 +126,72 @@ def policy_iteration(args):
     rental_reward = args.rental_reward 
     _logger.info(f"Rental reward: {rental_reward}")
 
-    while True: 
+    iterations = args.iterations_number
+    _logger.info(f"Iterations number: {iterations}")
 
-        delta = 0
+    temp = 0
+    while True and temp <= iterations: 
 
+        while True: 
+            delta = 0
+            for i in range(0, location_size_1 + 1):
+                for j in range(0, location_size_2 + 1):
+                    new_value = policy_evaluation(
+                        state=(i,j), 
+                        policy=policy[i,j], 
+                        transfer_cost=transfer_cost,
+                        max_cars=(location_size_1, location_size_2),
+                        request_rates=(location_request_rates[0], location_request_rates[1]),
+                        return_rates=(location_return_rates[0], location_return_rates[1]),
+                        discount_rate=discount_rate,
+                        rental_reward=rental_reward,
+                        value_function=value_function,
+                    )
+                    delta = max(delta, np.absolute(value_function[i,j] - new_value))
+                    value_function[i,j] = new_value
+
+            _logger.info(f"Value change/Delta: {delta}")
+            if delta < evaluation_change_threshold: 
+                break
+        
+        policy_stable = True
         for i in range(0, location_size_1 + 1):
             for j in range(0, location_size_2 + 1):
+                old_action = policy[i,j]
 
-                new_value = policy_evaluation(
-                    state=(i,j), 
-                    policy=policy[i,j], 
-                    transfer_cost=transfer_cost,
-                    max_cars=(location_size_1, location_size_2),
-                    request_rates=(location_request_rates[0], location_request_rates[1]),
-                    return_rates=(location_return_rates[0], location_return_rates[1]),
-                    discount_rate=discount_rate,
-                    rental_reward=rental_reward,
-                    value_function=value_function,
-                )
+                # Can't move more cars than there are in the parking lot
+                possible_actions = np.arange(-min(j, args.transfer_limit), min(i, args.transfer_limit) + 1)
 
-                delta = max(delta, np.absolute(value_function[i,j] - new_value))
-                value_function[i,j] = new_value
+                # Argmax the action
+                returns = []
+                for action in possible_actions:
+                    returns.append(
+                        policy_evaluation(
+                            state=(i,j),
+                            policy=action,
+                            value_function=value_function,
+                            transfer_cost=transfer_cost,
+                            max_cars=(location_size_1, location_size_2),
+                            return_rates=(location_return_rates[0], location_return_rates[1]),
+                            request_rates=(location_request_rates[0], location_request_rates[1]),
+                            discount_rate=discount_rate,
+                            rental_reward=rental_reward,
+                        )
+                    )
 
-        _logger.info(f"Value change/Delta: {delta}")
-        if delta < evaluation_change_threshold: 
+                # Select the best action
+                best_action = possible_actions[np.argmax(returns)]
+
+                if old_action != best_action:
+                    policy_stable = False
+
+        _logger.info(f"Policy stable: {policy_stable}")
+
+        if policy_stable: 
             break
 
-    policy_stable = True
-    for i in range(0, location_size_1 + 1):
-        for j in range(0, location_size_2 + 1):
-            old_action = policy[i,j]
+        temp = temp + 1
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Policy iteration for the Car Rental Problem")
