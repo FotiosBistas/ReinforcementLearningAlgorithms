@@ -5,6 +5,8 @@ import numpy as np
 from typing import Tuple
 from pprint import pprint
 from scipy.stats import poisson
+from functools import lru_cache
+
 
 
 logging.basicConfig(
@@ -20,6 +22,7 @@ _logger.setLevel("DEBUG")
 def poisson_distribution(n: int, lambda_: float):
     return poisson.pmf(k=n, mu=lambda_)
 
+@lru_cache(maxsize=None)
 def precompute_poisson_probabilities(max_cars: int, rates: Tuple[int, int]):
     probs_first = [poisson_distribution(n, rates[0]) for n in range(max_cars + 1)]
     probs_second = [poisson_distribution(n, rates[1]) for n in range(max_cars + 1)]
@@ -75,12 +78,6 @@ def policy_evaluation(
 
             cars_first_loc = cars_first_loc - valid_first
             cars_second_loc = cars_second_loc - valid_second
-
-            # Return
-            #cars_first_loc = min(cars_first_loc + return_rates[0], max_cars[0])
-            #cars_second_loc = min(cars_second_loc + return_rates[1], max_cars[1])
-
-            #returns += joint_probability_combination * (reward + discount_rate * value_function[int(cars_first_loc), int(cars_second_loc)])
 
             for return_cars_first in return_range[0]: 
                 for return_cars_second in return_range[1]:
@@ -154,11 +151,16 @@ def policy_iteration(args):
                 )
 
                 delta = max(delta, np.absolute(value_function[i,j] - new_value))
-
                 value_function[i,j] = new_value
 
+        _logger.info(f"Value change/Delta: {delta}")
         if delta < evaluation_change_threshold: 
             break
+
+    policy_stable = True
+    for i in range(0, location_size_1 + 1):
+        for j in range(0, location_size_2 + 1):
+            old_action = policy[i,j]
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Policy iteration for the Car Rental Problem")
