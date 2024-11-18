@@ -77,22 +77,22 @@ def policy_evaluation(
             cars_second_loc = cars_second_loc - valid_second
 
             # Return
-            cars_first_loc = min(cars_first_loc + return_rates[0], max_cars[0])
-            cars_second_loc = min(cars_second_loc + return_rates[1], max_cars[1])
+            #cars_first_loc = min(cars_first_loc + return_rates[0], max_cars[0])
+            #cars_second_loc = min(cars_second_loc + return_rates[1], max_cars[1])
 
-            returns += joint_probability_combination * (reward + discount_rate * value_function[int(cars_first_loc), int(cars_second_loc)])
+            #returns += joint_probability_combination * (reward + discount_rate * value_function[int(cars_first_loc), int(cars_second_loc)])
 
-            #for return_cars_first in return_range[0]: 
-            #    for return_cars_second in return_range[1]:
-            #        joint_probability_combination_return = return_probs[0][return_cars_first] * return_probs[1][return_cars_second]
+            for return_cars_first in return_range[0]: 
+                for return_cars_second in return_range[1]:
+                    joint_probability_combination_return = return_probs[0][return_cars_first] * return_probs[1][return_cars_second]
 
-            #        # Invalidate over limit returns
-            #        cars_first_loc = min(cars_first_loc + return_cars_first, max_cars[0])
-            #        cars_second_loc = min(cars_second_loc + return_cars_second, max_cars[1])
+                    # Invalidate over limit returns
+                    return_cars_first_loc = min(cars_first_loc + return_cars_first, max_cars[0])
+                    return_cars_second_loc = min(cars_second_loc + return_cars_second, max_cars[1])
 
-            #        joint_probability_combination = joint_probability_combination * joint_probability_combination_return
+                    joint_probability_combination_whole = joint_probability_combination * joint_probability_combination_return
 
-            #        reward += joint_probability_combination * (reward + discount_rate * value_function[int(cars_first_loc), int(cars_second_loc)])
+                    returns += joint_probability_combination_whole * (reward + discount_rate * value_function[int(return_cars_first_loc), int(return_cars_second_loc)])
 
     return returns
 
