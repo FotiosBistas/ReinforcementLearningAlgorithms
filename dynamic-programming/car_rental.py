@@ -1,6 +1,7 @@
 import argparse
 import logging
 import numpy as np
+import matplotlib.pyplot as plt
 
 from typing import Tuple
 from pprint import pprint
@@ -130,8 +131,9 @@ def policy_iteration(args):
 
     temp = 0
 
+    policy_list = []
     while True and temp <= iterations: 
-
+        policy_list.append(policy.copy())
         while True: 
             delta = 0
             for i in range(0, location_size_1 + 1):
@@ -193,6 +195,42 @@ def policy_iteration(args):
             break
 
         temp = temp + 1
+
+        _logger.info(f"Policy:")
+        pprint(policy)
+        _logger.info(f"Value function:")
+        pprint(value_function)
+    plot_policies_and_value_function(policy_list=policy_list, value_function=value_function, args=args)
+
+def plot_policies_and_value_function(policy_list, value_function, args):
+    fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+
+    # Flatten the axes for easier iteration
+    axes = axes.flatten()
+
+    # Plot each policy
+    for i, policy in enumerate(policy_list):
+        if i >= 5:  # Limit to 5 policies
+            break
+        ax = axes[i]
+        cax = ax.matshow(policy, cmap="coolwarm", origin="lower")
+        fig.colorbar(cax, ax=ax)
+        ax.set_title(f"Policy $\\pi_{{{i}}}$")
+        ax.set_xlabel("# Cars at second location")
+        ax.set_ylabel("# Cars at first location")
+
+    # Plot the value function as a 3D surface
+    ax = axes[-1]
+    x, y = np.meshgrid(range(value_function.shape[1]), range(value_function.shape[0]))
+    ax = fig.add_subplot(2, 3, 6, projection="3d")
+    ax.plot_surface(x, y, value_function, cmap="viridis")
+    ax.set_title("Value Function $V$")
+    ax.set_xlabel("# Cars at second location")
+    ax.set_ylabel("# Cars at first location")
+    ax.set_zlabel("Value")
+
+    plt.tight_layout()
+    plt.savefig("policy_iteration_plots.png")
     
 
 if __name__ == "__main__":
