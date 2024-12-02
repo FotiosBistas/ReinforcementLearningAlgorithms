@@ -50,10 +50,10 @@ def argmax(
     # A-10 the card of the dealer
     # 12...21 the current hand
     usable_ace = state[0]
-    player_card = state[1]
-    dealer_card = state[2]
+    player_card_index = state[1] - 12
+    dealer_card_index = state[2] - 1
 
-    temp = action_values[player_card, dealer_card, usable_ace, :] / action_values_counts[player_card, dealer_card, usable_ace, :]
+    temp = action_values[player_card_index, dealer_card_index, usable_ace, :] / action_values_counts[player_card_index, dealer_card_index, usable_ace, :]
 
     # Find all indices of the maximum value
     indices = np.where(temp == np.max(temp))[0]
@@ -82,8 +82,7 @@ def play_round(
 ) -> Tuple[int, int, list]:
 
     state_sequence = []
-    player_sum = 0
-    
+
     # Draw dealer card in order to check for an ACE + 10
     # Reminder the state 
     # State is whether the player has an ACE
@@ -99,16 +98,19 @@ def play_round(
     if dealer_sum == 22: 
         dealer_sum -= 10
 
-    state = initial_state
+    player_usable_ace = initial_state[0]
+    player_sum = initial_state[1]
     action = initial_action
+
+    player_ace_count = 1 if player_usable_ace else 0 
 
     while True: 
         
-        state_sequence.append([state, action])
+        state_sequence.append([(player_usable_ace, player_sum, first_dealer_card), action])
 
         if policy.__name__ == "argmax": 
             action = policy(
-                state=state,
+                state=(player_usable_ace, player_sum, first_dealer_card),
                 action_values=state_action_values,
                 action_values_counts=state_action_values_counts,
             )
@@ -122,6 +124,21 @@ def play_round(
             break
 
         new_card = draw_card()
+
+        if new_card == 1: 
+            player_ace_count += 1
+
+        player_sum += actual_card_value(new_card)
+
+        # Use 1 instead of ACE if player busts using the ace as 11
+        while player_sum > 21 and player_ace_count: 
+            player_sum -= 10
+            player_ace_count -= 1
+        
+
+        # Player busts
+        if player_sum > 21:
+            return initial_state, -1, state_sequence
 
 
 def estimate(args):
@@ -166,7 +183,7 @@ def estimate(args):
             initial_action=initial_action, 
             initial_state=initial_state,
             state_action_values=initial_state_action_values,
-            state_action_values_count=initial_state_action_values_counts,
+            state_action_values_counts=initial_state_action_values_counts,
         )
 
 if __name__=="__main__":
