@@ -4,7 +4,7 @@ import numpy as np
 import numpy.typing as npt 
 
 from pprint import pprint
-from typing import Tuple
+from typing import Tuple, Union, Callable
 
 logging.basicConfig(
     format='%(filename)s - %(asctime)s - %(levelname)s - %(message)s'
@@ -19,6 +19,19 @@ _logger.setLevel("DEBUG")
 HIT = 1
 STICK = 0
 
+# Player sticks on 20,21 hits on the rest
+policy_player = np.ones(22, dtype=int)
+policy_player[20] = STICK
+policy_player[21] = STICK
+_logger.info("Policy player")
+pprint(policy_player)
+
+# Dealer stick after 17 sum
+policy_dealer = np.ones(22, dtype=int)
+policy_dealer[17:] = STICK
+_logger.info("Policy dealer")
+pprint(policy_dealer)
+
 def exploring_starts(): 
     pass
 
@@ -30,7 +43,7 @@ def argmax(
     state: Tuple[int, int, int],
     action_values: npt.NDArray[np.float64], 
     action_values_counts: npt.NDArray[np.float64],
-):
+) -> int:
 
     # decouple the state
     # State is whether the player has an ACE
@@ -48,9 +61,68 @@ def argmax(
     # Randomly select one of them
     return np.random.choice(indices)
 
+def target_policy(sum: int, player_not_dealer: bool) -> int:
 
-def play_round():
-    pass
+    if(player_not_dealer): 
+        return policy_player[sum]
+
+    return policy_dealer[sum]
+
+
+def actual_card_value(card: int) -> int:
+    return 11 if card == 1 else card
+
+
+def play_round(
+    policy: Callable,
+    initial_state: Tuple[int, int, int], 
+    initial_action: int,
+    state_action_values: npt.NDArray[np.float64],
+    state_action_values_counts: npt.NDArray[np.int64],
+) -> Tuple[int, int, list]:
+
+    state_sequence = []
+    player_sum = 0
+    
+    # Draw dealer card in order to check for an ACE + 10
+    # Reminder the state 
+    # State is whether the player has an ACE
+    # 12...21 the current hand
+    # A-10 the card of the dealer
+    first_dealer_card = initial_state[2]
+    second_dealer_card = draw_card()
+
+    dealer_sum = actual_card_value(first_dealer_card) + actual_card_value(second_dealer_card)
+    dealer_usable_ace = 1 == first_dealer_card or 1 == second_dealer_card
+
+    # holds two aces the sums is larger than 21
+    if dealer_sum == 22: 
+        dealer_sum -= 10
+
+    state = initial_state
+    action = initial_action
+
+    while True: 
+        
+        state_sequence.append([state, action])
+
+        if policy.__name__ == "argmax": 
+            action = policy(
+                state=state,
+                action_values=state_action_values,
+                action_values_counts=state_action_values_counts,
+            )
+        elif policy.__name__ == "target_policy":
+            action = policy(
+                sum=player_sum, 
+                player_not_dealer=True,
+            )
+
+        if action == STICK: 
+            break
+
+        new_card = draw_card()
+
 
 def estimate(args):
 
@@ -68,17 +140,6 @@ def estimate(args):
     # calculate the average. Initialize to one due to division
     initial_state_action_values_counts = np.ones((10,10,2,2))
 
-    # Player sticks on 20,21 hits on the rest
-    policy_player = np.ones(22, dtype=int)
-    policy_player[20] = STICK
-    policy_player[21] = STICK
-    _logger.info("Policy player")
-    pprint(policy_player)
-    # Dealer stick after 17 sum
-    policy_dealer = np.ones(22, dtype=int)
-    policy_dealer[17:] = STICK
-    _logger.info("Policy dealer")
-    pprint(policy_dealer)
 
     for episode in range(episodes): 
         # Initialize a random state
@@ -93,6 +154,20 @@ def estimate(args):
 
         initial_action = np.random.choice([HIT, STICK])
         #_logger.debug(f"Running episode {episode}")
+
+        current_policy = argmax
+
+        # If first episode initialize with the target policy 
+        if episode == 0: 
+            current_policy = target_policy
+
+        play_round(
+            policy=current_policy,
+            initial_action=initial_action, 
+            initial_state=initial_state,
+            state_action_values=initial_state_action_values,
+            state_action_values_count=initial_state_action_values_counts,
+        )
 
 if __name__=="__main__":
 
