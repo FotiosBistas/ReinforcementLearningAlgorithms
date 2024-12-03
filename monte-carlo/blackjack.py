@@ -203,7 +203,7 @@ def estimate(args):
         # 12...21 the current hand
         # A-10 the card of the dealer
         initial_state = [
-            np.random.choice(range(0,1)), 
+            np.random.choice(range(0,2)), 
             np.random.choice(range(12, 22)), 
             np.random.choice(range(1,11)),
         ]
@@ -253,7 +253,7 @@ def create_5_1(
 
     titles = [f'Usable Ace, {episodes} Episodes', f'No Usable Ace, {episodes} Episodes']
 
-    _, axes = plt.subplots(2, 2, figsize=(40, 30))
+    _, axes = plt.subplots(2, 1, figsize=(40, 30))
     plt.subplots_adjust(wspace=0.1, hspace=0.2)
     axes = axes.flatten()
 
