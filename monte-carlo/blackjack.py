@@ -6,6 +6,8 @@ import numpy.typing as npt
 from pprint import pprint
 from typing import Tuple, Union, Callable
 
+np.random.seed(42)
+
 logging.basicConfig(
     format='%(filename)s - %(asctime)s - %(levelname)s - %(message)s'
 )
@@ -108,6 +110,11 @@ def play_round(
     # If not go bust count the ace as 11
     while True: 
         
+        state_sequence.append([(player_usable_ace, player_sum, first_dealer_card), action])
+
+        if action == STICK: 
+            break
+
         if policy.__name__ == "argmax": 
             action = policy(
                 state=(player_usable_ace, player_sum, first_dealer_card),
@@ -119,11 +126,6 @@ def play_round(
                 sum=player_sum, 
                 player_not_dealer=True,
             )
-
-        state_sequence.append([(player_usable_ace, player_sum, first_dealer_card), action])
-
-        if action == STICK: 
-            break
 
         new_card = draw_card()
 
@@ -143,6 +145,40 @@ def play_round(
             return initial_state, -1, state_sequence
 
         player_usable_ace = int(player_ace_count >= 1 and player_sum + 10 <= 21)
+
+    dealer_ace_count = 1 if dealer_usable_ace else 0
+    # Dealer Turn
+    while True:
+        action = policy_dealer[dealer_sum]
+
+        if action == STICK:
+            break
+
+        new_card = draw_card()
+
+        if new_card == 1:
+            dealer_ace_count += 1
+
+        # The player should try to always use an ACE as an 11 first
+        dealer_sum += actual_card_value(new_card)
+
+        # Use 1 instead of ACE if player busts using the ace as 11
+        while dealer_sum > 21 and dealer_ace_count:
+            dealer_sum -= 10
+            dealer_ace_count -= 1
+
+        # dealer busts
+        if dealer_sum > 21:
+            return initial_state, 1, state_sequence
+
+        dealer_usable_ace = int(dealer_ace_count >= 1 and dealer_sum + 10 <= 21)
+
+    if player_sum > dealer_sum:
+        return initial_state, 1, state_sequence
+    elif player_sum == dealer_sum:
+        return initial_state, 0, state_sequence
+    else:   
+        return initial_state, -1, state_sequence
 
 
 def estimate(args):
