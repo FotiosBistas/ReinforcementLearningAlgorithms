@@ -140,6 +140,8 @@ def play_round(
         if player_sum > 21:
             return initial_state, -1, state_sequence
 
+        player_usable_ace = int(player_ace_count >= 1 and player_sum + 10 <= 21)
+
 
 def estimate(args):
 
