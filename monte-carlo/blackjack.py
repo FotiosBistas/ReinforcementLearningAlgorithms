@@ -1,10 +1,13 @@
 import argparse
 import logging
 import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 import numpy.typing as npt 
 
 from pprint import pprint
 from typing import Tuple, Union, Callable
+from tqdm import tqdm
 
 logging.basicConfig(
     format='%(filename)s - %(asctime)s - %(levelname)s - %(message)s'
@@ -24,13 +27,13 @@ policy_player = np.ones(22, dtype=int)
 policy_player[20] = STICK
 policy_player[21] = STICK
 _logger.info("Policy player")
-pprint(policy_player)
+#pprint(policy_player)
 
 # Dealer stick after 17 sum
 policy_dealer = np.ones(22, dtype=int)
 policy_dealer[17:] = STICK
 _logger.info("Policy dealer")
-pprint(policy_dealer)
+#pprint(policy_dealer)
 
 def exploring_starts(): 
     pass
@@ -181,7 +184,6 @@ def play_round(
 
 def estimate(args):
 
-    epsilon = args.epsilon
     episodes = args.episodes_per_policy_update
 
     # 1.) The player always hits before and after 12. The first element represents the sum - 12 [0 -> 12 ... 9 -> 21]
@@ -190,13 +192,12 @@ def estimate(args):
     # 4.) The action the player will take hit or stick [0|1]
     state_action_values = np.zeros((10,10,2,2))
     _logger.info("Initial state action values")
-    print(state_action_values)
     # Keep in track how many times a state has been visited in order to
     # calculate the average. Initialize to one due to division
     state_action_values_counts = np.ones((10,10,2,2))
 
 
-    for episode in range(episodes): 
+    for episode in tqdm(range(episodes)): 
         # Initialize a random state
         # State is whether the player has an ACE
         # 12...21 the current hand
@@ -240,31 +241,58 @@ def estimate(args):
             state_action_values[player_card_index, dealer_card_index, player_usable_ace, action] += reward
             state_action_values_counts[player_card_index, dealer_card_index, player_usable_ace, action] += 1
 
-    return state_action_values / state_action_values_counts
+    return state_action_values, state_action_values_counts
 
-if __name__=="__main__":
+def create_5_1(
+    states_usable_ace, 
+    states_no_usable_ace, 
+    episodes,
+):
 
-    parser = argparse.ArgumentParser(description="Calculate an optimal policy based using Monte Carlo")
+    states = [states_usable_ace, states_no_usable_ace]
 
-    parser.add_argument(
-        "--episodes-per-policy-update",
-        type=int,
-        default=10000,
-        help="Number of simulated episodes per policy update. Default value is 10_000.",
-    )
+    titles = [f'Usable Ace, {episodes} Episodes', f'No Usable Ace, {episodes} Episodes']
 
-    #parser.add_argument(
-    #    "--total-policy-updates",
-    #    type=int,
-    #    default=,
-    #)
+    _, axes = plt.subplots(2, 2, figsize=(40, 30))
+    plt.subplots_adjust(wspace=0.1, hspace=0.2)
+    axes = axes.flatten()
 
-    parser.add_argument(
-        "--epsilon",
-        type=float,
-        default=1e-3,
-    )
-    
+    for state, title, axis in zip(states, titles, axes):
+        fig = sns.heatmap(np.flipud(state), cmap="YlGnBu", ax=axis, xticklabels=range(1, 11),
+                          yticklabels=list(reversed(range(12, 22))))
+        fig.set_ylabel('player sum', fontsize=30)
+        fig.set_xlabel('dealer showing', fontsize=30)
+        fig.set_title(title, fontsize=30)
+
+    plt.savefig(f'./images/{titles}.png')
+    plt.close()
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Blackjack: Monte Carlo Exploring Starts")
+    parser.add_argument("--episodes-per-policy-update", type=int, default=10000, help="Number of episodes")
     args = parser.parse_args()
 
-    estimate(args)
+    # Run Monte Carlo Exploring Starts
+    _logger.info("Running Monte Carlo Exploring Starts...")
+
+    state_action_values, state_action_values_counts = estimate(args)
+
+    no_usable = np.max(state_action_values[:, :, 0, :] / state_action_values_counts[:, :, 0, :], axis=-1)
+    usable = np.max(state_action_values[:, :, 1, :] / state_action_values_counts[:, :, 1, :], axis=-1)
+
+    create_5_1(
+        states_no_usable_ace=no_usable, 
+        states_usable_ace=usable, 
+        episodes=args.episodes_per_policy_update
+    )
+
+    # Compute optimal policy and state-value function
+    state_value_no_usable_ace = np.max(state_action_values[:, :, 0, :], axis=-1)
+    state_value_usable_ace = np.max(state_action_values[:, :, 1, :], axis=-1)
+    # get the optimal policy
+    action_no_usable_ace = np.argmax(state_action_values[:, :, 0, :], axis=-1)
+    action_usable_ace = np.argmax(state_action_values[:, :, 1, :], axis=-1)
+
+
+
+
