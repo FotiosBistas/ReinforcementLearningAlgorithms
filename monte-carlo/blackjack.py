@@ -104,10 +104,10 @@ def play_round(
 
     player_ace_count = 1 if player_usable_ace else 0 
 
+    # Player turn
+    # If not go bust count the ace as 11
     while True: 
         
-        state_sequence.append([(player_usable_ace, player_sum, first_dealer_card), action])
-
         if policy.__name__ == "argmax": 
             action = policy(
                 state=(player_usable_ace, player_sum, first_dealer_card),
@@ -120,6 +120,8 @@ def play_round(
                 player_not_dealer=True,
             )
 
+        state_sequence.append([(player_usable_ace, player_sum, first_dealer_card), action])
+
         if action == STICK: 
             break
 
@@ -128,6 +130,7 @@ def play_round(
         if new_card == 1: 
             player_ace_count += 1
 
+        # The player should try to always use an ACE as an 11 first
         player_sum += actual_card_value(new_card)
 
         # Use 1 instead of ACE if player busts using the ace as 11
@@ -136,7 +139,6 @@ def play_round(
             player_ace_count -= 1
         
 
-        # Player busts
         if player_sum > 21:
             return initial_state, -1, state_sequence
 
