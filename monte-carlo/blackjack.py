@@ -244,10 +244,13 @@ def estimate(args):
     return state_action_values, state_action_values_counts
 
 def create_5_1(
-    states_usable_ace, 
-    states_no_usable_ace, 
+    state_action_values, 
+    state_action_values_counts,
     episodes,
 ):
+
+    states_no_usable_ace = np.max(state_action_values[:, :, 0, :] / state_action_values_counts[:, :, 0, :], axis=-1)
+    states_usable_ace = np.max(state_action_values[:, :, 1, :] / state_action_values_counts[:, :, 1, :], axis=-1)
 
     states = [states_usable_ace, states_no_usable_ace]
 
@@ -267,6 +270,44 @@ def create_5_1(
     plt.savefig(f'./images/{titles}.png')
     plt.close()
 
+def create_5_2(
+    state_action_values,
+    state_action_values_counts,
+    episodes,
+):
+
+    state_action_values = state_action_values/ state_action_values_counts
+    # Compute optimal policy and state-value function
+    state_value_no_usable_ace = np.max(state_action_values[:, :, 0, :], axis=-1)
+    state_value_usable_ace = np.max(state_action_values[:, :, 1, :], axis=-1)
+    # get the optimal policy
+    action_no_usable_ace = np.argmax(state_action_values[:, :, 0, :], axis=-1)
+    action_usable_ace = np.argmax(state_action_values[:, :, 1, :], axis=-1)
+
+    images = [action_usable_ace,
+              state_value_usable_ace,
+              action_no_usable_ace,
+              state_value_no_usable_ace]
+
+    titles = ['Optimal policy with usable Ace',
+              'Optimal value with usable Ace',
+              'Optimal policy without usable Ace',
+              'Optimal value without usable Ace']
+
+    _, axes = plt.subplots(2, 2, figsize=(40, 30))
+    plt.subplots_adjust(wspace=0.1, hspace=0.2)
+    axes = axes.flatten()
+
+    for image, title, axis in zip(images, titles, axes):
+        fig = sns.heatmap(np.flipud(image), cmap="YlGnBu", ax=axis, xticklabels=range(1, 11),
+                          yticklabels=list(reversed(range(12, 22))))
+        fig.set_ylabel('player sum', fontsize=30)
+        fig.set_xlabel('dealer showing', fontsize=30)
+        fig.set_title(title, fontsize=30)
+
+    plt.savefig(f'./images/{titles}.png')
+    plt.close()
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Blackjack: Monte Carlo Exploring Starts")
     parser.add_argument("--episodes-per-policy-update", type=int, default=10000, help="Number of episodes")
@@ -277,21 +318,19 @@ if __name__ == "__main__":
 
     state_action_values, state_action_values_counts = estimate(args)
 
-    no_usable = np.max(state_action_values[:, :, 0, :] / state_action_values_counts[:, :, 0, :], axis=-1)
-    usable = np.max(state_action_values[:, :, 1, :] / state_action_values_counts[:, :, 1, :], axis=-1)
 
     create_5_1(
-        states_no_usable_ace=no_usable, 
-        states_usable_ace=usable, 
+        state_action_values=state_action_values,
+        state_action_values_counts=state_action_values_counts,
         episodes=args.episodes_per_policy_update
     )
 
-    # Compute optimal policy and state-value function
-    state_value_no_usable_ace = np.max(state_action_values[:, :, 0, :], axis=-1)
-    state_value_usable_ace = np.max(state_action_values[:, :, 1, :], axis=-1)
-    # get the optimal policy
-    action_no_usable_ace = np.argmax(state_action_values[:, :, 0, :], axis=-1)
-    action_usable_ace = np.argmax(state_action_values[:, :, 1, :], axis=-1)
+    create_5_2(
+        state_action_values=state_action_values,
+        state_action_values_counts=state_action_values_counts,
+        episodes=args.episodes_per_policy_update
+    )
+
 
 
 
