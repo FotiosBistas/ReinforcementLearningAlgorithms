@@ -6,8 +6,6 @@ import numpy.typing as npt
 from pprint import pprint
 from typing import Tuple, Union, Callable
 
-np.random.seed(42)
-
 logging.basicConfig(
     format='%(filename)s - %(asctime)s - %(levelname)s - %(message)s'
 )
@@ -38,7 +36,7 @@ def exploring_starts():
     pass
 
 def draw_card():
-    card = min(np.random.choice(range(1, 14), 1), 10)
+    card = min(np.random.choice(range(1, 14), 1)[0], 10)
     return card
 
 def argmax(
@@ -190,12 +188,12 @@ def estimate(args):
     # 2.) The dealer shows only their first card 1-10
     # 3.) The player has either a usable ace or not [0|1]
     # 4.) The action the player will take hit or stick [0|1]
-    initial_state_action_values = np.zeros((10,10,2,2))
+    state_action_values = np.zeros((10,10,2,2))
     _logger.info("Initial state action values")
-    print(initial_state_action_values)
+    print(state_action_values)
     # Keep in track how many times a state has been visited in order to
     # calculate the average. Initialize to one due to division
-    initial_state_action_values_counts = np.ones((10,10,2,2))
+    state_action_values_counts = np.ones((10,10,2,2))
 
 
     for episode in range(episodes): 
@@ -218,13 +216,31 @@ def estimate(args):
         if episode == 0: 
             current_policy = target_policy
 
-        play_round(
+        s, reward, sequence = play_round(
             policy=current_policy,
             initial_action=initial_action, 
             initial_state=initial_state,
-            state_action_values=initial_state_action_values,
-            state_action_values_counts=initial_state_action_values_counts,
+            state_action_values=state_action_values,
+            state_action_values_counts=state_action_values_counts,
         )
+
+        first_visit = set()
+
+        for (player_usable_ace, player_sum, dealer_card), action in sequence:
+            player_card_index = player_sum - 12
+            dealer_card_index = dealer_card - 1
+            state_action_pair = (player_usable_ace, player_card_index, dealer_card_index, action)
+            # first visit 
+            # don't visit the same states inside the same episode
+            if state_action_pair in first_visit:
+                continue
+
+            first_visit.add(state_action_pair)
+
+            state_action_values[player_card_index, dealer_card_index, player_usable_ace, action] += reward
+            state_action_values_counts[player_card_index, dealer_card_index, player_usable_ace, action] += 1
+
+    return state_action_values / state_action_values_counts
 
 if __name__=="__main__":
 
