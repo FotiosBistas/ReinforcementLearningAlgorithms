@@ -146,8 +146,7 @@ def play_round(
         if player_sum > 21:
             return initial_state, -1, state_sequence
 
-        #player_usable_ace = int(player_ace_count >= 1 and player_sum + 10 <= 21)
-        player_usable_ace = int(player_ace_count == 1)
+        player_usable_ace = int(player_ace_count >= 1 and player_sum + 10 <= 21)
 
     dealer_ace_count = 1 if dealer_usable_ace else 0
     # Dealer Turn
@@ -249,66 +248,91 @@ def create_5_1(
     state_action_values, 
     state_action_values_counts,
     episodes,
+    output_path='./images/',
+    colormap="YlGnBu"  # Common colormap
 ):
 
+    # Compute state-value functions by taking the max over actions
     states_no_usable_ace = np.max(state_action_values[:, :, 0, :] / state_action_values_counts[:, :, 0, :], axis=-1)
     states_usable_ace = np.max(state_action_values[:, :, 1, :] / state_action_values_counts[:, :, 1, :], axis=-1)
 
+    # Titles and data for plotting
     states = [states_usable_ace, states_no_usable_ace]
+    titles = [f"Usable Ace ({episodes} Episodes)", f"No Usable Ace ({episodes} Episodes)"]
 
-    titles = [f'Usable Ace, {episodes} Episodes', f'No Usable Ace, {episodes} Episodes']
+    # Create the subplots
+    fig, axes = plt.subplots(1, 2, figsize=(20, 10))  # 1 row, 2 columns for heatmaps
+    plt.subplots_adjust(wspace=0.3, hspace=0.3)  # Adjust space between plots
 
-    _, axes = plt.subplots(2, 1, figsize=(40, 30))
-    plt.subplots_adjust(wspace=0.1, hspace=0.2)
-    axes = axes.flatten()
+    for state, title, ax in zip(states, titles, axes):
+        sns.heatmap(
+            np.flipud(state), 
+            ax=ax, 
+            xticklabels=range(1, 11), 
+            yticklabels=list(reversed(range(12, 22)))
+        )
+        ax.set_xlabel("Dealer Showing", fontsize=14)
+        ax.set_ylabel("Player Sum", fontsize=14)
+        ax.set_title(title, fontsize=16)
 
-    for state, title, axis in zip(states, titles, axes):
-        fig = sns.heatmap(np.flipud(state), cmap="YlGnBu", ax=axis, xticklabels=range(1, 11),
-                          yticklabels=list(reversed(range(12, 22))))
-        fig.set_ylabel('player sum', fontsize=30)
-        fig.set_xlabel('dealer showing', fontsize=30)
-        fig.set_title(title, fontsize=30)
-
-    plt.savefig(f'./images/{titles}.png')
+    # Save the figure
+    output_file = f"{output_path}figure_5_1_{episodes}_episodes.png"
+    plt.savefig(output_file)
     plt.close()
+
+    _logger.info(f"Figure saved to {output_file}")
+
 
 def create_5_2(
     state_action_values,
     state_action_values_counts,
     episodes,
+    output_path="./images/",
+    colormap="YlGnBu"  # Common colormap
 ):
 
-    state_action_values = state_action_values/ state_action_values_counts
-    # Compute optimal policy and state-value function
+    # Normalize state-action values by counts
+    state_action_values = state_action_values / state_action_values_counts
+
+    # Compute state-value functions and optimal policies
     state_value_no_usable_ace = np.max(state_action_values[:, :, 0, :], axis=-1)
     state_value_usable_ace = np.max(state_action_values[:, :, 1, :], axis=-1)
-    # get the optimal policy
-    action_no_usable_ace = np.argmax(state_action_values[:, :, 0, :], axis=-1)
-    action_usable_ace = np.argmax(state_action_values[:, :, 1, :], axis=-1)
+    policy_no_usable_ace = np.argmax(state_action_values[:, :, 0, :], axis=-1)
+    policy_usable_ace = np.argmax(state_action_values[:, :, 1, :], axis=-1)
 
-    images = [action_usable_ace,
-              state_value_usable_ace,
-              action_no_usable_ace,
-              state_value_no_usable_ace]
+    # Data for plots
+    images = [policy_usable_ace, state_value_usable_ace, policy_no_usable_ace, state_value_no_usable_ace]
+    titles = [
+        "Optimal Policy (Usable Ace)",
+        "Optimal Value (Usable Ace)",
+        "Optimal Policy (No Usable Ace)",
+        "Optimal Value (No Usable Ace)"
+    ]
 
-    titles = ['Optimal policy with usable Ace',
-              'Optimal value with usable Ace',
-              'Optimal policy without usable Ace',
-              'Optimal value without usable Ace']
+    # Create subplots
+    fig, axes = plt.subplots(2, 2, figsize=(20, 15))  # Adjusted figure size for better readability
+    plt.subplots_adjust(wspace=0.3, hspace=0.3)
 
-    _, axes = plt.subplots(2, 2, figsize=(40, 30))
-    plt.subplots_adjust(wspace=0.1, hspace=0.2)
-    axes = axes.flatten()
+    for image, title, ax in zip(images, titles, axes.flatten()):
+        sns.heatmap(
+            np.flipud(image), 
+            ax=ax, 
+            xticklabels=range(1, 11), 
+            yticklabels=list(reversed(range(12, 22)))
+        )
+        ax.set_xlabel("Dealer Showing", fontsize=14)
+        ax.set_ylabel("Player Sum", fontsize=14)
+        ax.set_title(title, fontsize=16)
 
-    for image, title, axis in zip(images, titles, axes):
-        fig = sns.heatmap(np.flipud(image), cmap="YlGnBu", ax=axis, xticklabels=range(1, 11),
-                          yticklabels=list(reversed(range(12, 22))))
-        fig.set_ylabel('player sum', fontsize=30)
-        fig.set_xlabel('dealer showing', fontsize=30)
-        fig.set_title(title, fontsize=30)
-
-    plt.savefig(f'./images/{titles}.png')
+    # Save the figure
+    output_file = f"{output_path}figure_5_2_{episodes}_episodes.png"
+    plt.savefig(output_file)
     plt.close()
+
+    _logger.info(f"Figure saved to {output_file}")
+
+
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Blackjack: Monte Carlo Exploring Starts")
