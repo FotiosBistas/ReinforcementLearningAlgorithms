@@ -39,7 +39,7 @@ def draw_card():
     card = min(np.random.choice(range(1, 14), 1)[0], 10)
     return card
 
-def argmax(
+def greedy(
     state: Tuple[int, int, int],
     action_values: npt.NDArray[np.float64], 
     action_values_counts: npt.NDArray[np.float64],
@@ -61,7 +61,7 @@ def argmax(
     # Randomly select one of them
     return np.random.choice(indices)
 
-def target_policy(sum: int, player_not_dealer: bool) -> int:
+def initial_policy(sum: int, player_not_dealer: bool) -> int:
 
     if(player_not_dealer): 
         return policy_player[sum]
@@ -109,13 +109,13 @@ def play_round(
         
 
         if initial_action == -1:
-            if policy.__name__ == "argmax": 
+            if policy.__name__ == "greedy": 
                 action = policy(
                     state=(player_usable_ace, player_sum, first_dealer_card),
                     action_values=state_action_values,
                     action_values_counts=state_action_values_counts,
                 )
-            elif policy.__name__ == "target_policy":
+            elif policy.__name__ == "initial_policy":
                 action = policy(
                     sum=player_sum, 
                     player_not_dealer=True,
@@ -212,11 +212,14 @@ def estimate(args):
         initial_action = np.random.choice([HIT, STICK])
         #_logger.debug(f"Running episode {episode}")
 
-        current_policy = argmax
+        # Follow the greedy policy to do policy improvement
+        current_policy = greedy
 
         # If first episode initialize with the target policy 
+        # As the initial policy we use the policy evaluated in the previous blackjack
+        # example, that which sticks only on 20 or 21.
         if episode == 0: 
-            current_policy = target_policy
+            current_policy = initial_policy
 
         s, reward, sequence = play_round(
             policy=current_policy,
