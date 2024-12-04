@@ -35,9 +35,6 @@ policy_dealer[17:] = STICK
 _logger.info("Policy dealer")
 #pprint(policy_dealer)
 
-def exploring_starts(): 
-    pass
-
 def draw_card():
     card = min(np.random.choice(range(1, 14), 1)[0], 10)
     return card
@@ -103,7 +100,6 @@ def play_round(
 
     player_usable_ace = initial_state[0]
     player_sum = initial_state[1]
-    action = initial_action
 
     player_ace_count = 1 if player_usable_ace else 0 
 
@@ -111,22 +107,27 @@ def play_round(
     # If not go bust count the ace as 11
     while True: 
         
+
+        if initial_action == -1:
+            if policy.__name__ == "argmax": 
+                action = policy(
+                    state=(player_usable_ace, player_sum, first_dealer_card),
+                    action_values=state_action_values,
+                    action_values_counts=state_action_values_counts,
+                )
+            elif policy.__name__ == "target_policy":
+                action = policy(
+                    sum=player_sum, 
+                    player_not_dealer=True,
+                )
+        else: 
+            action = initial_action
+            initial_action = -1
+
         state_sequence.append([(player_usable_ace, player_sum, first_dealer_card), action])
 
         if action == STICK: 
             break
-
-        if policy.__name__ == "argmax": 
-            action = policy(
-                state=(player_usable_ace, player_sum, first_dealer_card),
-                action_values=state_action_values,
-                action_values_counts=state_action_values_counts,
-            )
-        elif policy.__name__ == "target_policy":
-            action = policy(
-                sum=player_sum, 
-                player_not_dealer=True,
-            )
 
         new_card = draw_card()
 
@@ -145,7 +146,8 @@ def play_round(
         if player_sum > 21:
             return initial_state, -1, state_sequence
 
-        player_usable_ace = int(player_ace_count >= 1 and player_sum + 10 <= 21)
+        #player_usable_ace = int(player_ace_count >= 1 and player_sum + 10 <= 21)
+        player_usable_ace = int(player_ace_count == 1)
 
     dealer_ace_count = 1 if dealer_usable_ace else 0
     # Dealer Turn
