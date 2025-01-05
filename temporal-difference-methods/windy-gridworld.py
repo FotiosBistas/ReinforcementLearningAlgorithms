@@ -3,7 +3,7 @@ import logging
 import numpy as np
 import matplotlib as plt
 
-
+from tqdm import trange
 from typing import Tuple, List
 
 logging.basicConfig(
@@ -14,18 +14,18 @@ logging.getLogger('matplotlib').setLevel(logging.WARNING)
 
 
 _logger = logging.getLogger()
-_logger.setLevel("DEBUG")
+_logger.setLevel("INFO")
 
-actions = [
-    #LEFT
-    np.array([0, -1]),
-    #RIGHT
-    np.array([0, 1]),
+actions = np.array([
     #UP
     np.array([-1, 0]),
     #DOWN
     np.array([1, 0]),
-]
+    #LEFT
+    np.array([0, -1]),
+    #RIGHT
+    np.array([0, 1]),
+])
 
 
 def step(
@@ -49,6 +49,38 @@ def step(
 
     return new_state
 
+def choose_action(
+    epsilon: float,
+    state: np.array,
+    Q: np.array, 
+):
+    global actions
+    # Choose action using policy derived from Q
+    if np.random.random() < epsilon: 
+        action_index = np.random.choice(a=len(actions))
+        action = actions[action_index]
+        _logger.debug(f"Randomly chose action: {action}")
+    else:
+        # Exploitation: Choose the best action(s), including handling of zero Q-values
+        current_action_values_ = Q[state[0], state[1], :]
+        _logger.debug(f"Current action values in state:\nAction Values: {current_action_values_}\nState: {state}")
+
+        # Find indices of actions with the maximum Q-value (handles zero-Q values naturally)
+        best_action_indices = np.flatnonzero(current_action_values_ == np.max(current_action_values_))
+
+        # Randomly choose among the best actions
+        action_index = np.random.choice(best_action_indices)
+        action = actions[action_index]
+        _logger.debug(f"Chose best action: {action}")
+
+    return action
+
+def get_action_index(action: np.array):
+    global actions
+    # Find the index of the matching action in the actions array
+    action_index = np.where(np.all(actions == action, axis=1))[0][0]
+    return action_index
+
 def run(args):
 
     n = args.n
@@ -64,8 +96,49 @@ def run(args):
     _logger.info(f"Epsilon: {epsilon}")
     wind_column = args.wind_column
     _logger.info(f"Wind Column:\n{wind_column}")
+    max_episodes = args.max_episodes
+    _logger.info(f"Max Episodes: {max_episodes}")
+    start = args.start
+    _logger.info(f"Start: {start}")
+    goal = args.goal
+    _logger.info(f"Goal: {goal}")
+    reward = args.reward 
+    _logger.info(f"Reward: {reward}")
 
-    pass
+
+    for episode in trange(max_episodes):
+        _logger.debug(f"Running episode: {episode}")
+        state = np.array(start)
+        _logger.debug(f"Start state: {state}")
+
+        action = choose_action(
+            epsilon=epsilon,
+            state=state, 
+            Q=Q,
+        )
+
+        while not np.array_equal(state, goal): 
+            # keep previous state for Sarsa Update
+            next_state = step(
+                state=state, 
+                action=action,
+                n=n,
+                m=m,
+                wind=wind_column,
+            )
+
+            next_action = choose_action(
+                epsilon=epsilon,
+                state=next_state,
+                Q=Q,
+            )
+
+            Q[state[0], state[1], get_action_index(action=action)] += alpha * (reward + Q[next_state[0], next_state[1], get_action_index(next_action)] - Q[state[0], state[1], get_action_index(action)])
+
+            action = next_action
+            state = next_state
+
+
 
 
 if __name__ == "__main__":
@@ -130,6 +203,14 @@ if __name__ == "__main__":
         nargs="+",
         default=[3,7],
         help="Terminal state. Default [3,7].",
+    )
+    
+
+    parser.add_argument(
+        "--max-episodes",
+        type=int,
+        default=500,
+        help="Max Episodes. Default is 500.",
     )
 
     args = parser.parse_args()
