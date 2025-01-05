@@ -1,7 +1,7 @@
 import argparse
 import logging
 import numpy as np
-import matplotlib as plt
+import matplotlib.pyplot as plt
 
 from tqdm import trange
 from typing import Tuple, List
@@ -105,6 +105,8 @@ def run(args):
     reward = args.reward 
     _logger.info(f"Reward: {reward}")
 
+    time_steps = [] 
+    cumulative_steps = 0 
 
     for episode in trange(max_episodes):
         _logger.debug(f"Running episode: {episode}")
@@ -116,6 +118,8 @@ def run(args):
             state=state, 
             Q=Q,
         )
+
+        steps_in_episode = 0  
 
         while not np.array_equal(state, goal): 
             # keep previous state for Sarsa Update
@@ -133,10 +137,27 @@ def run(args):
                 Q=Q,
             )
 
-            Q[state[0], state[1], get_action_index(action=action)] += alpha * (reward + Q[next_state[0], next_state[1], get_action_index(next_action)] - Q[state[0], state[1], get_action_index(action)])
+            Q[state[0], state[1], get_action_index(action=action)] += alpha * (
+                reward 
+                + Q[next_state[0], next_state[1], get_action_index(next_action)] 
+                - Q[state[0], state[1], get_action_index(action)]
+            )
 
             action = next_action
             state = next_state
+            steps_in_episode += 1
+
+        cumulative_steps += steps_in_episode
+        time_steps.append(cumulative_steps) 
+
+    # Plotting the results
+    plt.figure(figsize=(10, 6))
+    plt.plot(time_steps, range(max_episodes), color="red", linewidth=1)
+    plt.xlabel("Time steps")
+    plt.ylabel("Episodes")
+    plt.title("Episodes vs. Time Steps")
+    plt.grid()
+    plt.savefig("./here.png")
 
 
 
