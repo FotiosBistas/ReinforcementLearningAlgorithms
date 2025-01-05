@@ -105,7 +105,9 @@ def run(args):
     reward = args.reward 
     _logger.info(f"Reward: {reward}")
 
-    time_steps = [] 
+    time_steps = []        
+    episode_durations = [] 
+
     cumulative_steps = 0 
 
     for episode in trange(max_episodes):
@@ -149,6 +151,7 @@ def run(args):
 
         cumulative_steps += steps_in_episode
         time_steps.append(cumulative_steps) 
+        episode_durations.append(steps_in_episode)
 
     # Plotting the results
     plt.figure(figsize=(10, 6))
@@ -158,6 +161,17 @@ def run(args):
     plt.title("Episodes vs. Time Steps")
     plt.grid()
     plt.savefig("./timesteps.png")
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(max_episodes), episode_durations, label="Episode Duration", color="blue")
+    plt.axhline(y=max(episode_durations), color="red", linestyle="--", label="Max Duration")
+    plt.axhline(y=min(episode_durations), color="green", linestyle="--", label="Min Duration")
+    plt.xlabel("Episodes")
+    plt.ylabel("Episode Duration")
+    plt.title("Episode Durations Over Time")
+    plt.legend()
+    plt.grid()
+    plt.savefig("./episode_durations.png")
 
 
 if __name__ == "__main__":
