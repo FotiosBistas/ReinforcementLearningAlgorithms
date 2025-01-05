@@ -157,9 +157,7 @@ def run(args):
     plt.ylabel("Episodes")
     plt.title("Episodes vs. Time Steps")
     plt.grid()
-    plt.savefig("./here.png")
-
-
+    plt.savefig("./timesteps.png")
 
 
 if __name__ == "__main__":
