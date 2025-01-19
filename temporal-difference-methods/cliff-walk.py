@@ -42,12 +42,15 @@ def Sarsa(
 ) -> List[float]:
 
     Q = np.zeros((n, m, 4))
-    episode_rewards = []  # Track total reward for each episode
+
+    # Track total reward for each episode
+    episode_rewards = np.zeros(max_episodes)
 
     for episode in trange(max_episodes, desc="Running Sarsa"):
         _logger.debug(f"Running episode {episode}")
         state = start
-        total_reward = 0  # Initialize total reward for this episode
+        # Initialize total reward for this episode
+        total_reward = 0  
 
         action = choose_action(
             epsilon=epsilon,
@@ -84,7 +87,8 @@ def Sarsa(
             action = next_action
             state = next_state
 
-        episode_rewards.append(total_reward)  # Store total reward for this episode
+        # Store total reward for this episode
+        episode_rewards[episode] = total_reward
 
     return episode_rewards
 
@@ -176,20 +180,28 @@ def run(args):
     _logger.info(f"Cliff Reward: {cliff_reward}")
     cliffs = args.cliffs
     _logger.info(f"Cliffs: {cliffs}")
+    max_runs = args.max_runs
+    _logger.info(f"Max runs: {max_runs}")
 
-    rewards_sarsa = Sarsa(
-        n=n,
-        m=m,
-        epsilon=epsilon,
-        start=start,
-        goal=goal,
-        reward=reward,
-        cliff_reward=cliff_reward,
-        cliffs=cliffs,
-        alpha=alpha,
-        max_episodes=max_episodes,
-    )
 
+    rewards_sarsa = np.zeros(max_episodes)
+
+    for run in trange(max_runs, desc="Runs"):
+
+        rewards_sarsa += Sarsa(
+            n=n,
+            m=m,
+            epsilon=epsilon,
+            start=start,
+            goal=goal,
+            reward=reward,
+            cliff_reward=cliff_reward,
+            cliffs=cliffs,
+            alpha=alpha,
+            max_episodes=max_episodes,
+        )
+
+    rewards_sarsa /= max_runs
     # Plot results
     plt.plot(rewards_sarsa, label="Sarsa", color="blue")
     plt.xlabel("Episodes")
