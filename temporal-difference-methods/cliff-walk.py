@@ -1,8 +1,10 @@
 import argparse
 import logging
 import numpy as np
+import matplotlib.pyplot as plt
 
 from typing import Tuple, List
+from tqdm import trange
 
 logging.basicConfig(
     format='%(filename)s - %(asctime)s - %(levelname)s - %(message)s'
@@ -12,7 +14,7 @@ logging.getLogger('matplotlib').setLevel(logging.WARNING)
 
 
 _logger = logging.getLogger()
-_logger.setLevel("DEBUG")
+_logger.setLevel("INFO")
 
 actions = np.array([
     #UP
@@ -24,6 +26,101 @@ actions = np.array([
     #RIGHT
     np.array([0, 1]),
 ])
+
+
+def Sarsa(
+    n: int, 
+    m: int,
+    max_episodes: int,
+    epsilon: float,
+    start: np.array,
+    goal: np.array,
+    alpha: float,
+    reward: float, 
+    cliff_reward: float,
+    cliffs: List[List[int]],
+) -> List[float]:
+
+    Q = np.zeros((n, m, 4))
+    episode_rewards = []  # Track total reward for each episode
+
+    for episode in trange(max_episodes, desc="Running Sarsa"):
+        _logger.debug(f"Running episode {episode}")
+        state = start
+        total_reward = 0  # Initialize total reward for this episode
+
+        action = choose_action(
+            epsilon=epsilon,
+            state=state, 
+            Q=Q,
+        )
+
+        while not np.array_equal(state, goal): 
+            next_state, actual_reward = step(
+                state=state, 
+                action=action,
+                n=n,
+                m=m,
+                start=start,
+                reward=reward,
+                cliff_reward=cliff_reward,
+                cliffs=cliffs,
+            )
+
+            total_reward += actual_reward  # Accumulate reward for this episode
+
+            next_action = choose_action(
+                epsilon=epsilon,
+                state=next_state, 
+                Q=Q,
+            )
+
+            Q[state[0], state[1], get_action_index(action=action)] += alpha * (
+                actual_reward
+                + Q[next_state[0], next_state[1], get_action_index(next_action)] 
+                - Q[state[0], state[1], get_action_index(action)]
+            )
+
+            action = next_action
+            state = next_state
+
+        episode_rewards.append(total_reward)  # Store total reward for this episode
+
+    return episode_rewards
+
+def get_action_index(action: np.array):
+    global actions
+    # Find the index of the matching action in the actions array
+    action_index = np.where(np.all(actions == action, axis=1))[0][0]
+    return action_index
+
+def choose_action(
+    epsilon: float,
+    state: np.array,
+    Q: np.array, 
+):
+    global actions
+    # Choose action using policy derived from Q
+    if np.random.random() < epsilon: 
+        action_index = np.random.choice(a=len(actions))
+        action = actions[action_index]
+        _logger.debug(f"Randomly chose action: {action}")
+
+        return action 
+
+    # Exploitation: Choose the best action(s), including handling of zero Q-values
+    current_action_values_ = Q[state[0], state[1], :]
+    _logger.debug(f"Current action values in state:\nAction Values: {current_action_values_}\nState: {state}")
+
+    # Find indices of actions with the maximum Q-value (handles zero-Q values naturally)
+    best_action_indices = np.flatnonzero(current_action_values_ == np.max(current_action_values_))
+
+    # Randomly choose among the best actions
+    action_index = np.random.choice(best_action_indices)
+    action = actions[action_index]
+    _logger.debug(f"Chose best action: {action}")
+
+    return action
 
 def step(
     state: Tuple[int, int], 
@@ -49,6 +146,7 @@ def step(
         _logger.debug(f"Fell into cliff {new_state} with reward {cliff_reward}! Returning to start!")
         return start, -100
 
+
     _logger.debug(f"Advancing to new state {new_state} with reward {reward}")
     return new_state, -1
 
@@ -64,6 +162,8 @@ def run(args):
     _logger.info(f"Alpha: {alpha}")
     epsilon = args.epsilon
     _logger.info(f"Epsilon: {epsilon}")
+    gamma = args.gamma
+    _logger.info(f"Gamma: {gamma}")
     max_episodes = args.max_episodes
     _logger.info(f"Max Episodes: {max_episodes}")
     start = args.start
@@ -77,17 +177,29 @@ def run(args):
     cliffs = args.cliffs
     _logger.info(f"Cliffs: {cliffs}")
 
-
-    step(
-        state=np.array([2,2]),
-        action=actions[1],
+    rewards_sarsa = Sarsa(
         n=n,
         m=m,
+        epsilon=epsilon,
         start=start,
+        goal=goal,
         reward=reward,
         cliff_reward=cliff_reward,
         cliffs=cliffs,
+        alpha=alpha,
+        max_episodes=max_episodes,
     )
+
+    # Plot results
+    plt.plot(rewards_sarsa, label="Sarsa", color="blue")
+    plt.xlabel("Episodes")
+    plt.ylabel("Sum of rewards during episode")
+    plt.title("Sarsa Algorithm Performance")
+    plt.ylim(-100, 0)  # Limit y-axis range
+    plt.legend()
+    plt.grid()
+    plt.savefig("./here.png")
+
 
 if __name__ == "__main__":
 
