@@ -28,6 +28,63 @@ actions = np.array([
 ])
 
 
+def Q_Learning(
+    n: int, 
+    m: int,
+    max_episodes: int,
+    epsilon: float,
+    start: np.array,
+    goal: np.array,
+    alpha: float,
+    gamma: float,
+    reward: float, 
+    cliff_reward: float,
+    cliffs: List[List[int]],
+):
+
+
+    Q = np.zeros((n, m, 4))
+    episode_rewards = np.zeros(max_episodes)
+
+    for episode in trange(max_episodes, desc="Running Q-Learning"):
+
+        _logger.debug(f"Running episode {episode}")
+        state = start
+
+        total_reward = 0
+        while not np.array_equal(state, goal):
+
+            action = choose_action(
+                epsilon=epsilon,
+                state=state,
+                Q=Q,
+            )
+
+            next_state, actual_reward = step(
+                state=state, 
+                action=action,
+                n=n,
+                m=m,
+                start=start,
+                reward=reward,
+                cliff_reward=cliff_reward,
+                cliffs=cliffs,
+            )
+
+            Q[state[0], state[1], get_action_index(action=action)] += alpha * (
+                actual_reward
+                + gamma * np.max(Q[next_state[0], next_state[1], :])
+                - Q[state[0], state[1], get_action_index(action)]
+            )
+
+            total_reward+=actual_reward
+
+            state = next_state
+
+        episode_rewards[episode] = total_reward
+    
+    return episode_rewards
+
 def Sarsa(
     n: int, 
     m: int,
@@ -36,6 +93,7 @@ def Sarsa(
     start: np.array,
     goal: np.array,
     alpha: float,
+    gamma: float,
     reward: float, 
     cliff_reward: float,
     cliffs: List[List[int]],
@@ -59,6 +117,7 @@ def Sarsa(
         )
 
         while not np.array_equal(state, goal): 
+
             next_state, actual_reward = step(
                 state=state, 
                 action=action,
@@ -80,7 +139,7 @@ def Sarsa(
 
             Q[state[0], state[1], get_action_index(action=action)] += alpha * (
                 actual_reward
-                + Q[next_state[0], next_state[1], get_action_index(next_action)] 
+                + gamma*Q[next_state[0], next_state[1], get_action_index(next_action)] 
                 - Q[state[0], state[1], get_action_index(action)]
             )
 
@@ -185,8 +244,9 @@ def run(args):
 
 
     rewards_sarsa = np.zeros(max_episodes)
+    rewards_q_learning = np.zeros(max_episodes)
 
-    for run in trange(max_runs, desc="Runs"):
+    for _ in trange(max_runs, desc="Runs"):
 
         rewards_sarsa += Sarsa(
             n=n,
@@ -198,15 +258,32 @@ def run(args):
             cliff_reward=cliff_reward,
             cliffs=cliffs,
             alpha=alpha,
+            gamma=gamma,
+            max_episodes=max_episodes,
+        )
+
+        rewards_q_learning += Q_Learning(
+            n=n,
+            m=m,
+            epsilon=epsilon,
+            start=start,
+            goal=goal,
+            reward=reward,
+            cliff_reward=cliff_reward,
+            cliffs=cliffs,
+            alpha=alpha,
+            gamma=gamma,
             max_episodes=max_episodes,
         )
 
     rewards_sarsa /= max_runs
+    rewards_q_learning /= max_runs
     # Plot results
     plt.plot(rewards_sarsa, label="Sarsa", color="blue")
+    plt.plot(rewards_q_learning, label="Q-learning", color="red")
     plt.xlabel("Episodes")
     plt.ylabel("Sum of rewards during episode")
-    plt.title("Sarsa Algorithm Performance")
+    plt.title("Sarsa/Q-learning/ExpectedSarsa Algorithm Performance")
     plt.ylim(-100, 0)  # Limit y-axis range
     plt.legend()
     plt.grid()
