@@ -85,6 +85,90 @@ def Q_Learning(
     
     return episode_rewards
 
+def ExpectedSarsa(
+    n: int, 
+    m: int,
+    max_episodes: int,
+    epsilon: float,
+    start: np.array,
+    goal: np.array,
+    alpha: float,
+    gamma: float,
+    reward: float, 
+    cliff_reward: float,
+    cliffs: List[List[int]],
+) -> List[float]:
+
+
+    Q = np.zeros((n, m, 4))
+
+    # Track total reward for each episode
+    episode_rewards = np.zeros(max_episodes)
+
+    for episode in trange(max_episodes, desc="Running Expected Sarsa"):
+        _logger.debug(f"Running episode {episode}")
+        state = start
+        # Initialize total reward for this episode
+        total_reward = 0  
+
+        action = choose_action(
+            epsilon=epsilon,
+            state=state, 
+            Q=Q,
+        )
+
+        while not np.array_equal(state, goal): 
+
+            next_state, actual_reward = step(
+                state=state, 
+                action=action,
+                n=n,
+                m=m,
+                start=start,
+                reward=reward,
+                cliff_reward=cliff_reward,
+                cliffs=cliffs,
+            )
+
+            total_reward += actual_reward  # Accumulate reward for this episode
+
+            next_action = choose_action(
+                epsilon=epsilon,
+                state=next_state, 
+                Q=Q,
+            )
+
+
+            all_actions = Q[next_state[0], next_state[1], :]
+            num_actions = all_actions.shape[0]
+            max_value = np.max(all_actions)
+            best_actions = [i for i, value in enumerate(all_actions) if value == max_value]
+
+            # Probability of selecting a best action
+            prob_best = (1 - epsilon) / len(best_actions) if len(best_actions) > 0 else 0
+            # Probability of selecting any action (uniform for exploration)
+            prob_uniform = epsilon / num_actions
+
+            # Expected value calculation
+            expected_value = sum(
+                prob_best * all_actions[i] if i in best_actions else prob_uniform * all_actions[i]
+                for i in range(num_actions)
+            )
+
+            Q[state[0], state[1], get_action_index(action=action)] += alpha * (
+                actual_reward
+                + gamma*expected_value
+                - Q[state[0], state[1], get_action_index(action)]
+            )
+
+            action = next_action
+            state = next_state
+
+        # Store total reward for this episode
+        episode_rewards[episode] = total_reward
+
+    return episode_rewards
+
 def Sarsa(
     n: int, 
     m: int,
@@ -213,7 +297,119 @@ def step(
     _logger.debug(f"Advancing to new state {new_state} with reward {reward}")
     return new_state, -1
 
-def run(args):
+
+def create_figure_6_4(args):
+    n = args.n
+    m = args.m
+    epsilon = args.epsilon
+    gamma = args.gamma
+    max_episodes = args.max_episodes
+    start = np.array(args.start)
+    goal = np.array(args.goal)
+    reward = args.reward
+    cliff_reward = args.cliff_reward
+    cliffs = args.cliffs
+    max_runs = args.max_runs
+
+    alphas = np.linspace(0.1, 1.1, 11)  # Range of alpha values (x-axis)
+    max_runs = 10
+    interim_episodes = 100
+    # I am not running 500000 episodes
+    asymptotic_episodes = 1000
+
+    # Initialize arrays to store results
+    sarsa_interim = np.zeros(len(alphas))
+    sarsa_asymptotic = np.zeros(len(alphas))
+    q_learning_interim = np.zeros(len(alphas))
+    q_learning_asymptotic = np.zeros(len(alphas))
+    expected_sarsa_interim = np.zeros(len(alphas))
+    expected_sarsa_asymptotic = np.zeros(len(alphas))
+
+    for idx, alpha in enumerate(alphas):
+        _logger.info(f"Running for alpha={alpha}")
+
+        rewards_sarsa = np.zeros(asymptotic_episodes)
+        rewards_q_learning = np.zeros(asymptotic_episodes)
+        rewards_expected_sarsa = np.zeros(asymptotic_episodes)
+
+        for _ in trange(max_runs, desc=f"Alpha {alpha}"):
+            # Collect rewards for each algorithm
+            rewards_sarsa += Sarsa(
+                n=n,
+                m=m,
+                epsilon=epsilon,
+                start=start,
+                goal=goal,
+                reward=reward,
+                cliff_reward=cliff_reward,
+                cliffs=cliffs,
+                alpha=alpha,
+                gamma=gamma,
+                max_episodes=asymptotic_episodes,
+            )
+            rewards_q_learning += Q_Learning(
+                n=n,
+                m=m,
+                epsilon=epsilon,
+                start=start,
+                goal=goal,
+                reward=reward,
+                cliff_reward=cliff_reward,
+                cliffs=cliffs,
+                alpha=alpha,
+                gamma=gamma,
+                max_episodes=asymptotic_episodes,
+            )
+            rewards_expected_sarsa += ExpectedSarsa(
+                n=n,
+                m=m,
+                epsilon=epsilon,
+                start=start,
+                goal=goal,
+                reward=reward,
+                cliff_reward=cliff_reward,
+                cliffs=cliffs,
+                alpha=alpha,
+                gamma=gamma,
+                max_episodes=asymptotic_episodes,
+            )
+
+        # Average rewards over runs
+        rewards_sarsa /= max_runs
+        rewards_q_learning /= max_runs
+        rewards_expected_sarsa /= max_runs
+
+        # Interim performance: Average over first 100 episodes
+        sarsa_interim[idx] = np.mean(rewards_sarsa[:interim_episodes])
+        q_learning_interim[idx] = np.mean(rewards_q_learning[:interim_episodes])
+        expected_sarsa_interim[idx] = np.mean(rewards_expected_sarsa[:interim_episodes])
+
+        # Asymptotic performance: Average over last 100 episodes
+        sarsa_asymptotic[idx] = np.mean(rewards_sarsa[-asymptotic_episodes:])
+        q_learning_asymptotic[idx] = np.mean(rewards_q_learning[-asymptotic_episodes:])
+        expected_sarsa_asymptotic[idx] = np.mean(rewards_expected_sarsa[-asymptotic_episodes:])
+
+    # Plot results
+    plt.figure(figsize=(10, 6))
+
+    # Interim performance
+    plt.plot(alphas, sarsa_interim, label="Sarsa (Interim)", marker="v", color="blue", linestyle="--")
+    plt.plot(alphas, q_learning_interim, label="Q-Learning (Interim)", marker="s", color="black", linestyle="--")
+    plt.plot(alphas, expected_sarsa_interim, label="Expected Sarsa (Interim)", marker="x", color="red", linestyle="--")
+
+    # Asymptotic performance
+    plt.plot(alphas, sarsa_asymptotic, label="Sarsa (Asymptotic)", marker="v", color="blue")
+    plt.plot(alphas, q_learning_asymptotic, label="Q-Learning (Asymptotic)", marker="s", color="black")
+    plt.plot(alphas, expected_sarsa_asymptotic, label="Expected Sarsa (Asymptotic)", marker="x", color="red")
+
+    plt.xlabel(r"$\alpha$ (Learning Rate)", fontsize=14)
+    plt.ylabel("Sum of rewards per episode", fontsize=14)
+    plt.title("Performance of TD Control Methods on Cliff-Walking Task", fontsize=16)
+    plt.legend()
+    plt.grid()
+    plt.savefig("./figure_6_4.png")
+
+def create_figure_inside_example(args):
     n = args.n
     _logger.info(f"Height: {n}")
     m = args.m
@@ -245,6 +441,7 @@ def run(args):
 
     rewards_sarsa = np.zeros(max_episodes)
     rewards_q_learning = np.zeros(max_episodes)
+    rewards_expected_sarsa = np.zeros(max_episodes)
 
     for _ in trange(max_runs, desc="Runs"):
 
@@ -276,18 +473,35 @@ def run(args):
             max_episodes=max_episodes,
         )
 
+        rewards_expected_sarsa += ExpectedSarsa(
+            n=n,
+            m=m,
+            epsilon=epsilon,
+            start=start,
+            goal=goal,
+            reward=reward,
+            cliff_reward=cliff_reward,
+            cliffs=cliffs,
+            alpha=alpha,
+            gamma=gamma,
+            max_episodes=max_episodes,
+        )
+
+
     rewards_sarsa /= max_runs
     rewards_q_learning /= max_runs
+    rewards_expected_sarsa /= max_runs
     # Plot results
     plt.plot(rewards_sarsa, label="Sarsa", color="blue")
     plt.plot(rewards_q_learning, label="Q-learning", color="red")
+    plt.plot(rewards_expected_sarsa, label="ExpectedSarsa", color="green")
     plt.xlabel("Episodes")
     plt.ylabel("Sum of rewards during episode")
     plt.title("Sarsa/Q-learning/ExpectedSarsa Algorithm Performance")
     plt.ylim(-100, 0)  # Limit y-axis range
     plt.legend()
     plt.grid()
-    plt.savefig("./here.png")
+    plt.savefig("./figure_inside_example.png")
 
 
 if __name__ == "__main__":
@@ -390,4 +604,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    run(args=args)
+    create_figure_inside_example(args=args)
+
+    create_figure_6_4(args=args)
