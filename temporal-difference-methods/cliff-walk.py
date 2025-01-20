@@ -384,7 +384,7 @@ def create_figure_6_4(args):
         q_learning_interim[idx] = np.mean(rewards_q_learning[:interim_episodes])
         expected_sarsa_interim[idx] = np.mean(rewards_expected_sarsa[:interim_episodes])
 
-        # Asymptotic performance: Average over last 100 episodes
+        # Asymptotic performance: Average over last 1000 episodes
         sarsa_asymptotic[idx] = np.mean(rewards_sarsa[-asymptotic_episodes:])
         q_learning_asymptotic[idx] = np.mean(rewards_q_learning[-asymptotic_episodes:])
         expected_sarsa_asymptotic[idx] = np.mean(rewards_expected_sarsa[-asymptotic_episodes:])
@@ -405,6 +405,7 @@ def create_figure_6_4(args):
     plt.xlabel(r"$\alpha$ (Learning Rate)", fontsize=14)
     plt.ylabel("Sum of rewards per episode", fontsize=14)
     plt.title("Performance of TD Control Methods on Cliff-Walking Task", fontsize=16)
+    plt.ylim(-160, 0)  # Limit y-axis range
     plt.legend()
     plt.grid()
     plt.savefig("./figure_6_4.png")
