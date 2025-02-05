@@ -1,4 +1,5 @@
 import argparse
+import pytest
 import logging
 import numpy as np
 
@@ -14,9 +15,6 @@ logging.getLogger('matplotlib').setLevel(logging.WARNING)
 _logger = logging.getLogger()
 _logger.setLevel("DEBUG")
 
-import numpy as np
-from typing import Tuple
-
 actions = np.array([
     np.array([-1, 0]),  # Decrease vertical speed (UP)
     np.array([1, 0]),   # Increase vertical speed (DOWN)
@@ -31,6 +29,7 @@ actions = np.array([
 
 # Define track size
 rows, cols = 32, 17 
+MAX_SPEED = 5
 
 # Initialize track grid with zeros (open track)
 track = np.zeros((rows, cols), dtype=np.int8)
@@ -68,23 +67,12 @@ _logger.debug(track)
 def step(
     state: Tuple[int, int], 
     velocity: Tuple[int, int], 
-    action: Tuple[int, int], 
-    n: int, 
-    m: int
-) -> Tuple[Tuple[int, int], Tuple[int, int]]:
-    """
-    Updates position and velocity of the car in the racetrack.
+    action: Tuple[int,int], 
+) -> Tuple[Tuple[int, int], Tuple[int, int], int]:
 
-    Args:
-        state (Tuple[int, int]): Current position (row, col)
-        velocity (Tuple[int, int]): Current velocity (vy, vx)
-        action (Tuple[int, int]): Acceleration applied (dy, dx)
-        n (int): Number of rows in the grid
-        m (int): Number of columns in the grid
+    global track
+    global actions
 
-    Returns:
-        Tuple[Tuple[int, int], Tuple[int, int]]: New position, new velocity
-    """
     # Convert inputs to NumPy arrays for easy operations
     state = np.array(state)
     velocity = np.array(velocity)
@@ -92,15 +80,35 @@ def step(
 
     # Update velocity with acceleration
     new_velocity = velocity + action
+    _logger.debug(new_velocity)
+    new_velocity = np.clip(new_velocity, -MAX_SPEED, MAX_SPEED)
 
-    # Update position with velocity
+
+    # Update position with new velocity
     new_state = state + new_velocity
 
-    # Clamp within grid boundaries
-    new_state[0] = np.clip(new_state[0], 0, n - 1)
-    new_state[1] = np.clip(new_state[1], 0, m - 1)
+    # **Return immediately if out of bounds**
+    if not (0 <= new_state[0] < track.shape[0]) or not (0 <= new_state[1] < track.shape[1]):
+        new_state = np.random.choice(start_cols)
+        _logger.debug(f"OUT OF BOUNDS DETECTED: {new_state}. Resetting to start position {new_state}.")
+        return (0, new_state), (0, 0), -100
 
-    return tuple(new_state), tuple(new_velocity)
+    # **Check for collision with a wall**
+    if track[new_state[0], new_state[1]] == 1:
+        _logger.debug(f"COLLISION detected at {new_state}. Resetting to start position {new_state}.")
+        new_state = (0, np.random.choice(start_cols))  # Reset to start line
+        new_velocity = (0, 0)
+        return new_state, new_velocity, -100  # Large negative reward
+
+    # **Check if the car has reached the finish line**
+    if track[new_state[0], new_state[1]] == 2:
+        _logger.debug("FINISH LINE REACHED!")
+        return tuple(new_state), tuple(new_velocity), 0  # Reached finish line
+
+    # **Normal step with small penalty for each move**
+    _logger.debug(f"VALID MOVE: Moving to {new_state}. Continuing the race.")
+    return tuple(new_state), tuple(new_velocity), -1
+
 
 
 def get_action_index(action: np.array):
@@ -108,6 +116,58 @@ def get_action_index(action: np.array):
     # Find the index of the matching action in the actions array
     action_index = np.where(np.all(actions == action, axis=1))[0][0]
     return action_index
+
+def test_normal_move():
+    _logger.debug("TRACK:")
+    _logger.debug(track)
+    state = (3, 4)
+    velocity = (0, 2)
+    action = (0, 1)
+    new_state, new_velocity, reward = step(state, velocity, action)
+    assert reward == -1
+    assert new_velocity == (0, 3)
+    assert new_state == (3, 7)
+
+def test_out_of_bounds():
+    _logger.debug("TRACK:")
+    _logger.debug(track)
+    state = (3, 15)
+    velocity = (0, 2)
+    action = (0, 1)
+    _, new_velocity, reward = step(state, velocity, action)
+    assert reward == -100
+    assert new_velocity == (0, 0)
+
+def test_collision():
+    _logger.debug("TRACK:")
+    _logger.debug(track)
+    state = (2, 3)
+    velocity = (0, -1)
+    action = (0, 0)  # No acceleration, should hit wall
+    new_state, new_velocity, reward = step(state, velocity, action)
+    assert reward == -100
+
+def test_max_speed():
+    _logger.debug("TRACK:")
+    _logger.debug(track)
+    state = (2, 3)
+    velocity = (4, 4)
+    action = (2, 2)  
+    new_state, new_velocity, reward = step(state, velocity, action)
+    assert reward == -1
+    assert new_velocity == (5, 5)
+    assert new_state == (7, 8)
+
+def test_finish_line():
+    _logger.debug("TRACK:")
+    _logger.debug(track)
+    _logger.debug(track[track.shape[0] - 1])
+    state = (31, 11)
+    velocity = (0, 5)
+    action = (0, 1)  # No acceleration, should reach finish
+    new_state, new_velocity, reward = step(state, velocity, action)
+    assert reward == 0
+
 
 
 def run(args): 
@@ -126,21 +186,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Calculate the optimal policy for a nxm windy Gridworld.")
 
     parser.add_argument(
-        "--start-line",
-        type=int, 
-        nargs="+",
-        default=[3,0],
-        help="Start location of the car. Default [3,0].",
+        "--max-speed",
+        type=float,
+        default=5.0,
+        help="Max Speed. Default is 5.0",
     )
-
-    parser.add_argument(
-        "--finish-line",
-        type=int, 
-        nargs="+",
-        default=[3,7],
-        help="Terminal state. Default [3,7].",
-    )
-    
 
     parser.add_argument(
         "--max-episodes",
@@ -150,5 +200,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+
+    pytest.main()
 
     run(args=args)
