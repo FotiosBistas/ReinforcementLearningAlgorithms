@@ -3,7 +3,7 @@ import pytest
 import logging
 import numpy as np
 
-from typing import Tuple, List
+from typing import Tuple, List, Callable
 
 logging.basicConfig(
     format='%(filename)s - %(asctime)s - %(levelname)s - %(message)s'
@@ -80,34 +80,36 @@ def step(
 
     # Update velocity with acceleration
     new_velocity = velocity + action
-    _logger.debug(new_velocity)
     new_velocity = np.clip(new_velocity, -MAX_SPEED, MAX_SPEED)
 
+    _logger.debug(f"Current state: {state}")
+    _logger.debug(f"Updated velocity from: {velocity} to {new_velocity}")
 
     # Update position with new velocity
     new_state = state + new_velocity
 
     # **Return immediately if out of bounds**
     if not (0 <= new_state[0] < track.shape[0]) or not (0 <= new_state[1] < track.shape[1]):
-        new_state = np.random.choice(start_cols)
-        _logger.debug(f"OUT OF BOUNDS DETECTED: {new_state}. Resetting to start position {new_state}.")
-        return (0, new_state), (0, 0), -100
+        new_start = np.array([0, np.random.choice(a=start_cols, size=1)[0]])  # Reset to start line
+        new_velocity = np.array([0, 0])
+        _logger.debug(f"OUT OF BOUNDS DETECTED: {new_state}. Resetting to start position {new_start}.")
+        return new_start, new_velocity, -100
 
     # **Check for collision with a wall**
     if track[new_state[0], new_state[1]] == 1:
-        _logger.debug(f"COLLISION detected at {new_state}. Resetting to start position {new_state}.")
-        new_state = (0, np.random.choice(start_cols))  # Reset to start line
-        new_velocity = (0, 0)
-        return new_state, new_velocity, -100  # Large negative reward
+        new_start = np.array([0, np.random.choice(a=start_cols, size=1)[0]])  # Reset to start line
+        new_velocity = np.array([0, 0])
+        _logger.debug(f"COLLISION detected at {new_state}. Resetting to start position {new_start}.")
+        return new_start, new_velocity, -100  # Large negative reward
 
     # **Check if the car has reached the finish line**
     if track[new_state[0], new_state[1]] == 2:
         _logger.debug("FINISH LINE REACHED!")
-        return tuple(new_state), tuple(new_velocity), 0  # Reached finish line
+        return new_state, new_velocity, 0  # Reached finish line
 
     # **Normal step with small penalty for each move**
-    _logger.debug(f"VALID MOVE: Moving to {new_state}. Continuing the race.")
-    return tuple(new_state), tuple(new_velocity), -1
+    _logger.debug(f"VALID MOVE: Moving to {new_state} from {state}. Continuing the race.")
+    return new_state, new_velocity, -1
 
 def e_soft(
     epsilon: float, 
@@ -289,10 +291,79 @@ def test_greedy_tiebreak():
         assert not(action[0] == 1 and action[1] == -1), f"Greedy tiebreak failed with seed {seed}, got {action}"
 
 
+def create_episode(
+    epsilon: float,
+    Q: np.array,
+    behavior_policy: Callable,
+):
+    global track
+    global actions
+    global start_cols
+
+    episode_states = []
+    episode_actions = []
+    episode_rewards = []
+
+    episode_velocity = np.array([0, 0])
+
+    # Initial states are in the start of the Track array
+    initial_state = np.array([0, np.random.choice(a=start_cols, size=1)[0]])
+    _logger.debug(f"Starting from state: {initial_state}")
+    initial_action = behavior_policy(
+        epsilon=epsilon, 
+        state=initial_state, 
+        Q=Q, 
+        actions=actions,
+    )
+
+    episode_states.append(initial_state)
+    episode_actions.append(initial_action)
+
+    state, episode_velocity, reward = step(
+        state=initial_state,
+        velocity=episode_velocity, 
+        action=initial_action,
+    )
+
+    while track[state[0], state[1]] != 2: 
+        episode_rewards.append(reward)
+        episode_states.append(state)
+        action = behavior_policy(
+            epsilon=epsilon,
+            state=state, 
+            Q=Q,
+            actions=actions,
+        )
+        episode_actions.append(action)
+        state, episode_velocity, reward = step(
+            state=state,
+            velocity=episode_velocity, 
+            action=action,
+        )
+
+    # Append the last reward of the Terminal State
+    episode_rewards.append(reward)
+
+    return episode_states, episode_actions, episode_rewards
+
+
+
 def run(args): 
+
+    global actions
 
     vertical_velocity = 0
     horizontal_velocity = 0
+
+    Q = np.zeros((rows, cols, len(actions)))
+    Counts = np.zeros((rows, cols, (len(actions))))
+    p_s = greedy
+    b = e_soft
+
+
+    episode_states, episode_actions, episode_rewards = create_episode(epsilon=0.1, Q=Q, behavior_policy=b)
+
+    _logger.info(f"Created episode successfully")
 
 if __name__ == "__main__":
 
@@ -305,10 +376,17 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Calculate the optimal policy for a nxm windy Gridworld.")
 
     parser.add_argument(
-        "--max-episodes",
+        "--max-timesteps",
         type=int,
         default=500,
         help="Max Episodes. Default is 500.",
+    )
+
+    parser.add_argument(
+        "--epsilon",
+        type=float,
+        default=0.1,
+        help="Epsilon. Default is 0.1.",
     )
 
     args = parser.parse_args()
