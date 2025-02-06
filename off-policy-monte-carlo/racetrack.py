@@ -109,6 +109,41 @@ def step(
     _logger.debug(f"VALID MOVE: Moving to {new_state}. Continuing the race.")
     return tuple(new_state), tuple(new_velocity), -1
 
+def e_soft(
+    epsilon: float, 
+    state: Tuple[int, int],
+    Q: np.array,
+    actions: np.array
+):
+    # Choose action using policy derived from Q
+    if np.random.random() < epsilon: 
+        action_index = np.random.choice(a=len(actions))
+        action = actions[action_index]
+        _logger.debug(f"Randomly chose action: {action}")
+    else:
+        action = greedy(
+            state=state,
+            Q=Q,
+            actions=actions,
+        )
+
+    return action
+
+def greedy(
+    state: Tuple[int, int],
+    Q: np.array, 
+    actions: np.array
+):
+    # Exploitation: Choose the best action(s), including handling of zero Q-values
+    current_action_values_ = Q[state[0], state[1], :]
+    _logger.debug(f"Current action values in state:\nAction Values: {current_action_values_}\nState: {state}")
+    # Find indices of actions with the maximum Q-value (handles zero-Q values naturally)
+    best_action_indices = np.flatnonzero(current_action_values_ == np.max(current_action_values_))
+    # Randomly choose among the best actions
+    action_index = np.random.choice(best_action_indices)
+    action = actions[action_index]
+    _logger.debug(f"Chose best action: {action}")
+    return action
 
 
 def get_action_index(action: np.array):
@@ -168,6 +203,90 @@ def test_finish_line():
     new_state, new_velocity, reward = step(state, velocity, action)
     assert reward == 0
 
+    
+@pytest.mark.parametrize("epsilon, expected_actions", [
+    (0.0, [-1, 0]),  # Greedy selection
+    (1.0, 
+        [
+            [-1, 0],  # Decrease vertical speed (UP)
+            [1, 0],   # Increase vertical speed (DOWN)
+            [0, -1],  # Decrease horizontal speed (LEFT)
+            [0, 1],   # Increase horizontal speed (RIGHT)
+            [-1, -1], # Decrease both (UP LEFT)
+            [-1, 1],  # Decrease vertical, increase horizontal (UP RIGHT)
+            [1, -1],  # Increase vertical, decrease horizontal (DOWN LEFT)
+            [1, 1],   # Increase both (DOWN RIGHT)
+            [0, 0],   # No acceleration
+        ]
+    ),  # Random selection
+])
+def test_e_soft(epsilon, expected_actions):
+    global actions
+    # Sample Q-table
+    Q = np.array([
+        [
+            [1, 2, 3, 4, 5, 6, 7, 8, 8], 
+            [9, 8, 7, 6, 5, 4, 3, 2, 1]
+        ],  # Q-values for state (0,0) and (0,1)
+        [
+            [2, 2, 2, 2, 5, 4, 4, 2, 2], 
+            [1, 0, 3, 3, 0, 1, 2, 2, 3]
+        ]   # Q-values for state (1,0) and (1,1)
+    ])
+
+    _logger.debug(f"Shape of action value array: {Q.shape}")
+    _logger.debug(f"Expected actions: {expected_actions}")
+    state = (0, 1)
+    np.random.seed(42)  # Fix seed for reproducibility
+    action = e_soft(epsilon, state, Q, actions)
+    _logger.debug(f"Produced action {action}")
+
+    truth_values = np.array(action == expected_actions)
+    _logger.debug(truth_values)
+
+    # Convert action to tuple before checking
+    assert np.any(action == expected_actions), f"Unexpected action {action} for ε={epsilon}"
+
+def test_greedy():
+    global actions
+    # Sample Q-table
+    Q = np.array([
+        [
+            [1, 2, 3, 4, 5, 6, 7, 8, 8], 
+            [9, 8, 7, 6, 5, 4, 3, 2, 1]
+        ],  # Q-values for state (0,0) and (0,1)
+        [
+            [2, 2, 2, 2, 5, 4, 4, 2, 2], 
+            [1, 0, 3, 3, 0, 1, 2, 2, 3]
+        ]   # Q-values for state (1,0) and (1,1)
+    ])
+    state = (0, 1)
+    action = greedy(state, Q, actions=actions)
+
+    assert action[0] == -1 and action[1] == 0, f"Greedy function failed, expected [0, 0] or [1, 1], got {action}"
+
+def test_greedy_tiebreak():
+    global actions
+    # Sample Q-table
+    Q = np.array([
+        [
+            [1, 2, 3, 4, 5, 6, 7, 8, 8], 
+            [9, 8, 7, 6, 5, 4, 3, 2, 1]
+        ],  # Q-values for state (0,0) and (0,1)
+        [
+            [2, 2, 2, 2, 2, 2, 1, 2, 2], 
+            [1, 0, 3, 3, 0, 1, 2, 2, 3]
+        ]   # Q-values for state (1,0) and (1,1)
+    ])
+    
+    state = (1, 0)  # All Q-values are equal
+
+    # Test with multiple seeds
+    for seed in [42, 7, 123, 999, 2024]:
+        np.random.seed(seed)  # Set random seed
+        action = greedy(state, Q, actions=actions)
+        
+        assert not(action[0] == 1 and action[1] == -1), f"Greedy tiebreak failed with seed {seed}, got {action}"
 
 
 def run(args): 
@@ -184,13 +303,6 @@ if __name__ == "__main__":
             raise argparse.ArgumentTypeError("Lists must be in the format 'x,y' (e.g., '3,1').")
 
     parser = argparse.ArgumentParser(description="Calculate the optimal policy for a nxm windy Gridworld.")
-
-    parser.add_argument(
-        "--max-speed",
-        type=float,
-        default=5.0,
-        help="Max Speed. Default is 5.0",
-    )
 
     parser.add_argument(
         "--max-episodes",
