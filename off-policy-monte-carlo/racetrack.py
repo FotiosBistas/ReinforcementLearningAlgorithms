@@ -118,11 +118,13 @@ def e_soft(
     Q: np.array,
     actions: np.array
 ):
+    probability = 0
     # Choose action using policy derived from Q
     if np.random.random() < epsilon: 
         action_index = np.random.choice(a=len(actions))
         action = actions[action_index]
         _logger.debug(f"Randomly chose action: {action}")
+        probability = epsilon/len(actions)
     else:
         action = greedy(
             state=state,
@@ -130,7 +132,9 @@ def e_soft(
             actions=actions,
         )
 
-    return action
+        probability = 1 - epsilon + epsilon/len(actions)
+
+    return action, probability
 
 def greedy(
     state: Tuple[int, int],
@@ -303,6 +307,7 @@ def create_episode(
 
     episode_states = []
     episode_actions = []
+    episode_action_probability = []
     episode_rewards = []
 
     episode_velocity = np.array([0, 0])
@@ -310,7 +315,7 @@ def create_episode(
     # Initial states are in the start of the Track array
     initial_state = np.array([0, np.random.choice(a=start_cols, size=1)[0]])
     _logger.debug(f"Starting from state: {initial_state}")
-    initial_action = behavior_policy(
+    initial_action, action_prob = behavior_policy(
         epsilon=epsilon, 
         state=initial_state, 
         Q=Q, 
@@ -319,6 +324,7 @@ def create_episode(
 
     episode_states.append(initial_state)
     episode_actions.append(initial_action)
+    episode_action_probability.append(action_prob)
 
     state, episode_velocity, reward = step(
         state=initial_state,
@@ -329,13 +335,14 @@ def create_episode(
     while track[state[0], state[1]] != 2: 
         episode_rewards.append(reward)
         episode_states.append(state)
-        action = behavior_policy(
+        action, action_prob = behavior_policy(
             epsilon=epsilon,
             state=state, 
             Q=Q,
             actions=actions,
         )
         episode_actions.append(action)
+        episode_action_probability.append(action_prob)
         state, episode_velocity, reward = step(
             state=state,
             velocity=episode_velocity, 
@@ -345,7 +352,7 @@ def create_episode(
     # Append the last reward of the Terminal State
     episode_rewards.append(reward)
 
-    return episode_states, episode_actions, episode_rewards
+    return episode_states, episode_actions, episode_rewards, episode_action_probability
 
 
 
@@ -363,14 +370,14 @@ def run(args):
 
     for _ in tgrange(max_episodes):
 
-        episode_states, episode_actions, episode_rewards = create_episode(epsilon=0.1, Q=Q, behavior_policy=b)
+        episode_states, episode_actions, episode_rewards, episode_action_probability = create_episode(epsilon=0.1, Q=Q, behavior_policy=b)
 
         _logger.info(f"Created episode successfully")
 
         G = 0 
         W = 1
 
-        for state, action, reward in zip(reversed(episode_states), reversed(episode_actions), reversed(episode_rewards)):
+        for state, action, reward, prob in zip(reversed(episode_states), reversed(episode_actions), reversed(episode_rewards), reversed(episode_action_probability)):
             G = discount_factor * G + reward
             Counts[state[0], state[1], get_action_index(action)] += W 
             Q[state[0], state[1], get_action_index(action)] += W/Counts[state[0], state[1], get_action_index(action)](G - Q[state[0], state[1], get_action_index(action)])
@@ -381,7 +388,7 @@ def run(args):
                 break
 
             # 9 actions with equal probability by the behavior policy
-            W *= 9
+            W *= prob
 
 
 
