@@ -4,6 +4,7 @@ import logging
 import numpy as np
 
 from typing import Tuple, List, Callable
+from tqdm import tgrange
 
 logging.basicConfig(
     format='%(filename)s - %(asctime)s - %(levelname)s - %(message)s'
@@ -352,18 +353,39 @@ def run(args):
 
     global actions
 
-    vertical_velocity = 0
-    horizontal_velocity = 0
+    max_episodes = args.max_episodes
+    discount_factor = args.discount_factor
 
     Q = np.zeros((rows, cols, len(actions)))
     Counts = np.zeros((rows, cols, (len(actions))))
     p_s = greedy
     b = e_soft
 
+    for _ in tgrange(max_episodes):
 
-    episode_states, episode_actions, episode_rewards = create_episode(epsilon=0.1, Q=Q, behavior_policy=b)
+        episode_states, episode_actions, episode_rewards = create_episode(epsilon=0.1, Q=Q, behavior_policy=b)
 
-    _logger.info(f"Created episode successfully")
+        _logger.info(f"Created episode successfully")
+
+        G = 0 
+        W = 1
+
+        for state, action, reward in zip(reversed(episode_states), reversed(episode_actions), reversed(episode_rewards)):
+            G = discount_factor * G + reward
+            Counts[state[0], state[1], get_action_index(action)] += W 
+            Q[state[0], state[1], get_action_index(action)] += W/Counts[state[0], state[1], get_action_index(action)](G - Q[state[0], state[1], get_action_index(action)])
+
+            best_action = p_s(state=state, Q=Q, actions=actions)
+
+            if action != best_action: 
+                break
+
+            # 9 actions with equal probability by the behavior policy
+            W *= 9
+
+
+
+
 
 if __name__ == "__main__":
 
@@ -376,9 +398,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Calculate the optimal policy for a nxm windy Gridworld.")
 
     parser.add_argument(
-        "--max-timesteps",
+        "--max-episodes",
         type=int,
-        default=500,
+        default=1000,
         help="Max Episodes. Default is 500.",
     )
 
@@ -387,6 +409,13 @@ if __name__ == "__main__":
         type=float,
         default=0.1,
         help="Epsilon. Default is 0.1.",
+    )
+
+    parser.add_argument(
+        "--discount-factor",
+        type=float,
+        default=1.0,
+        help="Discount factor. Default is 1.",
     )
 
     args = parser.parse_args()
