@@ -4,7 +4,7 @@ import logging
 import numpy as np
 
 from typing import Tuple, List, Callable
-from tqdm import tgrange
+from tqdm import trange
 
 logging.basicConfig(
     format='%(filename)s - %(asctime)s - %(levelname)s - %(message)s'
@@ -14,7 +14,7 @@ logging.getLogger('matplotlib').setLevel(logging.WARNING)
 
 
 _logger = logging.getLogger()
-_logger.setLevel("DEBUG")
+_logger.setLevel("INFO")
 
 actions = np.array([
     np.array([-1, 0]),  # Decrease vertical speed (UP)
@@ -368,7 +368,7 @@ def run(args):
     p_s = greedy
     b = e_soft
 
-    for _ in tgrange(max_episodes):
+    for episode in trange(max_episodes):
 
         episode_states, episode_actions, episode_rewards, episode_action_probability = create_episode(epsilon=0.1, Q=Q, behavior_policy=b)
 
@@ -380,11 +380,16 @@ def run(args):
         for state, action, reward, prob in zip(reversed(episode_states), reversed(episode_actions), reversed(episode_rewards), reversed(episode_action_probability)):
             G = discount_factor * G + reward
             Counts[state[0], state[1], get_action_index(action)] += W 
-            Q[state[0], state[1], get_action_index(action)] += W/Counts[state[0], state[1], get_action_index(action)](G - Q[state[0], state[1], get_action_index(action)])
+            Q[state[0], state[1], get_action_index(action)] += (
+                W / Counts[state[0], state[1], get_action_index(action)]
+            ) * (G - Q[state[0], state[1], get_action_index(action)])
+
 
             best_action = p_s(state=state, Q=Q, actions=actions)
-
-            if action != best_action: 
+            _logger.debug(f"Best action using greedy policy: {best_action}")
+            _logger.debug(f"Current action: {action}")
+            if np.array_equal(action, best_action): 
+                _logger.info("Breaking from inner loop. Current action is the best action.")
                 break
 
             # 9 actions with equal probability by the behavior policy
