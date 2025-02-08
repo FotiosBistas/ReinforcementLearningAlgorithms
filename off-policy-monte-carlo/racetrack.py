@@ -501,11 +501,11 @@ def plot_cumulative_timesteps(timesteps_per_episode, file_name="cumulative_times
 def plot_trajectory(Q, actions, track, start_cells, file_name="trajectory_refined.png"):
 
     fig = plt.figure(figsize=(12, 8), dpi=150)
-    fig.suptitle("Sample Trajectories from 10 Random Restarts", size=12, weight="bold")
+    fig.suptitle("Sample Trajectories from 10 Random Restarts using max 10000 timesteps", size=12, weight="bold")
 
     _logger.info("Creating trajectory based on the learned value function.")
     for i in range(10):
-        _logger.info(f"Simulating timestep {i}")
+        _logger.info(f"Simulating trajectory {i}")
         # Reset to random starting position
         state = start_cells[np.random.choice(len(start_cells))]
         velocity = np.array([0, 0])
@@ -514,7 +514,7 @@ def plot_trajectory(Q, actions, track, start_cells, file_name="trajectory_refine
         random_trajectory = [state.tolist()]
         steps = 0
 
-        while track[state[0], state[1]] != 2 and steps < 1000:  # Simulate up to 1000 steps
+        while track[state[0], state[1]] != 2 and steps < 10000:  # Simulate up to 10000 steps
             action, _ = greedy(q_values=Q[state[0], state[1], :], actions=actions)
             state, velocity, _ = step(
                 state=state, 
@@ -545,7 +545,7 @@ def plot_trajectory(Q, actions, track, start_cells, file_name="trajectory_refine
             random_trajectory[-1][1], random_trajectory[-1][0],
             color="red", label="End", s=20
         )
-        ax.set_title(f"Restart {i + 1}", fontsize=10)
+        ax.set_title(f"Restart {i + 1} with steps: {steps}", fontsize=10)
 
     plt.tight_layout()
     plt.legend(loc="upper left", fontsize=6)
