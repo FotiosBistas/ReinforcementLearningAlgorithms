@@ -30,7 +30,7 @@ actions = np.array([
 
 # Define track size
 rows, cols = 32, 17 
-MAX_SPEED = 5
+MAX_SPEED = 4
 
 # Initialize track grid with zeros (open track)
 track = np.zeros((rows, cols), dtype=np.int8)
@@ -126,6 +126,21 @@ def e_soft(
 
     # Sample action according to probabilities
     action_index = np.random.choice(len(actions), p=probabilities)
+    action = actions[action_index]
+    return action, probabilities[action_index]
+
+def uniform(
+    state: Tuple[int, int],
+    Q: np.ndarray,
+    actions: np.ndarray
+):
+    """
+    uniform policy: Returns an action and its probability of being chosen.
+    """
+
+    probabilities = np.ones(len(actions)) * 1/len(actions)
+    # Sample action according to probabilities
+    action_index = np.random.choice(len(actions))
     action = actions[action_index]
     return action, probabilities[action_index]
 
@@ -347,7 +362,6 @@ def create_episode(
     start_cols: List[int],
     behavior_policy: Callable,
 ):
-
     episode_states = []
     episode_actions = []
     episode_action_probability = []
@@ -377,9 +391,12 @@ def create_episode(
         track=track,
     )
 
+    trajectory = [initial_state.copy()]  # Track the agent's positions
     while track[state[0], state[1]] != 2: 
         episode_rewards.append(reward)
         episode_states.append(state)
+        trajectory.append(state.copy())  # Append position to trajectory
+
         action, action_prob = behavior_policy(
             epsilon=epsilon,
             state=state, 
@@ -398,13 +415,14 @@ def create_episode(
 
     # Append the last reward of the Terminal State
     episode_rewards.append(reward)
+    trajectory.append(state.copy())  # Final position
 
-    return episode_states, episode_actions, episode_rewards, episode_action_probability
+    return episode_states, episode_actions, episode_rewards, episode_action_probability, trajectory
+
 
 
 
 def run(args): 
-
     global actions
     global track
     global start_cols
@@ -414,14 +432,15 @@ def run(args):
     epsilon = args.epsilon
 
     Q = np.zeros((rows, cols, len(actions)))
-    Counts = np.zeros((rows, cols, (len(actions))))
+    Counts = np.zeros((rows, cols, len(actions)))
     p_s = greedy
     b = e_soft
 
+    timesteps_per_episode = []  # Track timesteps per episode
     division_epsilon = 1e-8  # Small value to prevent division by zero
-    for episode in trange(max_episodes):
 
-        episode_states, episode_actions, episode_rewards, episode_action_probability = create_episode(
+    for episode in trange(max_episodes):
+        episode_states, episode_actions, episode_rewards, episode_action_probability, trajectory = create_episode(
             epsilon=epsilon, 
             Q=Q, 
             actions=actions,
@@ -429,6 +448,8 @@ def run(args):
             start_cols=start_cols,
             behavior_policy=b,
         )
+
+        timesteps_per_episode.append(len(episode_states))  # Record timesteps
 
         _logger.info(f"Created episode successfully")
 
@@ -443,7 +464,6 @@ def run(args):
                 W / (Counts[episode_states[i][0], episode_states[i][1], action_index] + division_epsilon)
             ) * (G - Q[episode_states[i][0], episode_states[i][1], action_index])
 
-
             best_action = p_s(state=episode_states[i], Q=Q, actions=actions)
             _logger.debug(f"Best action using greedy policy: {best_action}")
             _logger.debug(f"Current action: {episode_actions[i]}")
@@ -451,77 +471,97 @@ def run(args):
                 _logger.info("Breaking from inner loop. Current action is the best action.")
                 break
 
-            # 9 actions with equal probability by the behavior policy
             W *= episode_action_probability[i]
 
-    plot_q_value_convergence(Q)  # Show learned Q-values
-    plot_policy(Q, actions)  # Show best actions
-    #episode_states, _, _, _ = create_episode(epsilon=epsilon, Q=Q, behavior_policy=e_soft, start_cols=start_cols, track=track, actions=actions)
-    #plot_agent_path(episode_states)  # Show agent's movement
+        # Plot trajectory for the current episode
+        if episode == max_episodes - 1:  # Plot for the last episode
+            plot_trajectory(track, trajectory, file_name=f"trajectory_episode_{episode + 1}.png")
+
+    # Plot cumulative timesteps vs episodes after training
+    plot_cumulative_timesteps(timesteps_per_episode, file_name="cumulative_timesteps.png")
+
 
 
 import matplotlib.pyplot as plt
+import seaborn as sns
 
-def plot_q_value_convergence(Q):
+def plot_cumulative_timesteps(timesteps_per_episode, file_name="cumulative_timesteps.png"):
     """
-    Plots the maximum Q-value for each state over time.
-    """
-    q_values = np.max(Q, axis=2)  # Get max Q-value for each state
-    plt.figure(figsize=(10, 5))
-    plt.imshow(q_values, cmap="coolwarm", origin="upper")
-    plt.colorbar(label="Max Q-value")
-    plt.title("Q-value Heatmap for Each State")
-    plt.xlabel("Track Column")
-    plt.ylabel("Track Row")
-    plt.savefig("q_value_convergence.png")
-
-def plot_policy(Q, actions):
-    """
-    Plots the optimal policy as arrows on the racetrack.
-    """
-    policy_grid = np.zeros((Q.shape[0], Q.shape[1], 2))  # Stores best action vectors
-
-    for i in range(Q.shape[0]):
-        for j in range(Q.shape[1]):
-            if track[i, j] == 1:  # Wall
-                continue
-            best_action_index = np.argmax(Q[i, j, :])  # Best action index
-            policy_grid[i, j] = actions[best_action_index]  # Store action vector
-
-    plt.figure(figsize=(10, 5))
-    plt.imshow(track, cmap="gray", origin="upper")  # Show track
-    for i in range(Q.shape[0]):
-        for j in range(Q.shape[1]):
-            if track[i, j] == 1:
-                continue
-            plt.arrow(j, i, policy_grid[i, j, 1] * 0.4, -policy_grid[i, j, 0] * 0.4,
-                      head_width=0.3, head_length=0.3, fc='red', ec='red')
-
-    plt.title("Learned Policy (Best Actions)")
-    plt.xlabel("Track Column")
-    plt.ylabel("Track Row")
-    plt.savefig("optimal_policy.png")
-
-def plot_agent_path(episode_states):
-    """
-    Plots the agent's path on the racetrack.
-    """
-    plt.figure(figsize=(10, 5))
-    plt.imshow(track, cmap="gray", origin="upper")  # Show track
+    Plots the cumulative timesteps vs episodes.
     
-    # Extract x and y positions from states
-    x_positions = [s[1] for s in episode_states]
-    y_positions = [s[0] for s in episode_states]
+    Parameters:
+    - timesteps_per_episode: List[int] -> Number of timesteps for each episode.
+    - file_name: str -> Name of the file to save the plot.
+    """
+    cumulative_timesteps = np.cumsum(timesteps_per_episode)  # Compute cumulative sum
+    episodes = np.arange(1, len(timesteps_per_episode) + 1)  # Episode numbers
 
-    plt.plot(x_positions, y_positions, marker="o", markersize=4, color="blue", label="Agent Path")
-    plt.scatter(x_positions[0], y_positions[0], color="green", s=100, label="Start")
-    plt.scatter(x_positions[-1], y_positions[-1], color="red", s=100, label="End")
+    plt.figure(figsize=(10, 6))
+    plt.plot(cumulative_timesteps, episodes, color="red")
+    plt.xlabel("Time steps")
+    plt.ylabel("Episodes")
+    plt.title("Episodes vs. Time Steps")
+    plt.grid(True)
+    plt.savefig(file_name)
+    plt.close()
 
-    plt.title("Agent Path on Racetrack")
-    plt.xlabel("Track Column")
-    plt.ylabel("Track Row")
-    plt.legend()
-    plt.savefig("agent_path.png")
+import matplotlib.colors as mcolors
+
+def plot_trajectory(track, trajectory, file_name="trajectory_refined.png"):
+    """
+    Plots the agent's refined trajectory on the track.
+
+    Parameters:
+    - track: np.ndarray -> The grid track with boundaries, start, and finish.
+    - trajectory: List[Tuple[int, int]] -> Sequence of states visited by the agent.
+    - file_name: str -> Name of the file to save the plot.
+    """
+    import matplotlib.colors as mcolors
+
+    # Define a custom colormap for the track
+    cmap = mcolors.ListedColormap(["white", "blue", "red"])
+    bounds = [-0.5, 0.5, 1.5, 2.5]
+    norm = mcolors.BoundaryNorm(bounds, cmap.N)
+
+    plt.figure(figsize=(12, 8))
+
+    # Plot the track
+    plt.imshow(track.T, cmap=cmap, norm=norm, origin="upper", interpolation="nearest")
+
+    # Extract trajectory positions, skipping duplicates
+    unique_trajectory = [trajectory[0]]
+    for i in range(1, len(trajectory)):
+        if not np.array_equal(trajectory[i], trajectory[i - 1]):
+            unique_trajectory.append(trajectory[i])
+
+    trajectory_x, trajectory_y = zip(*unique_trajectory)  # Correct coordinates
+
+    # Plot the trajectory path
+    plt.plot(
+        trajectory_y, trajectory_x,
+        color="yellow", linewidth=1.5, alpha=0.7, label="Trajectory"
+    )
+
+    # Optionally highlight resets
+    for i in range(1, len(unique_trajectory)):
+        if unique_trajectory[i][0] == 0:  # If reset to start
+            plt.scatter(
+                unique_trajectory[i][1], unique_trajectory[i][0],
+                color="orange", s=20, label="Reset" if i == 1 else None
+            )
+
+    # Add labels and formatting
+    plt.title("Refined Agent's Trajectory on the Track")
+    plt.xlabel("Columns")
+    plt.ylabel("Rows")
+    plt.legend(loc="upper left")
+    plt.grid(color="gray", linestyle="--", linewidth=0.5, alpha=0.7)
+
+    plt.gca().invert_yaxis()  # Invert y-axis for proper alignment
+    plt.savefig(file_name)
+    plt.close()
+
+
 
 
 
