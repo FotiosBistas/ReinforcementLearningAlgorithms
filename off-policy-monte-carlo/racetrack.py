@@ -435,8 +435,8 @@ def run(args):
     Q = np.zeros((rows, cols, len(actions)))
     Counts = np.zeros((rows, cols, len(actions)))
     p_s = greedy
-    #b = e_soft 
-    b = uniform
+    b = e_soft 
+    #b = uniform
 
     timesteps_per_episode = []  # Track timesteps per episode
     division_epsilon = 1e-8  # Small value to prevent division by zero
@@ -508,20 +508,25 @@ def plot_cumulative_timesteps(timesteps_per_episode, file_name="cumulative_times
 
 def plot_trajectory(Q, actions, track, file_name="trajectory_refined.png"):
 
+    policy = np.argmax(Q, axis=-1)
+
     fig = plt.figure(figsize=(12, 8), dpi=150)
     fig.suptitle("Sample Trajectories from 10 Random Restarts", size=12, weight="bold")
 
+    _logger.info("Creating trajectory based on the learned value function.")
     for i in range(10):
+        _logger.info(f"Simulating timestep {i}")
         # Reset to random starting position
         state = np.array([0, np.random.choice(a=start_cols, size=1)[0]])
         velocity = np.array([0, 0])
-        terminated = False
 
         # Store trajectory for this random restart
         random_trajectory = [state.tolist()]
         steps = 0
 
-        while track[state[0], state[1]] != 2 and steps < 100:  # Simulate up to 100 steps
+        while track[state[0], state[1]] != 2 and steps < 1000:  # Simulate up to 1000 steps
+            action_index = policy[state[0], state[1]]  # Select action from greedy policy
+            action = actions[action_index]
             action = greedy(state=state, Q=Q, actions=actions)
             state, velocity, _ = step(state, velocity, action, actions, track)
 
