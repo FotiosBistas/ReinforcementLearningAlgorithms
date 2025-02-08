@@ -92,14 +92,14 @@ def step(
     if not (0 <= new_state[0] < track.shape[0]) or not (0 <= new_state[1] < track.shape[1]):
         new_start = np.array([0, np.random.choice(a=start_cols, size=1)[0]])  # Reset to start line
         new_velocity[:] = 0
-        _logger.debug(f"OUT OF BOUNDS DETECTED: {new_state}. Resetting to start position {new_start}.")
+        _logger.debug(f"OUT OF BOUNDS DETECTED: {new_state}. Resetting to start position {new_start} with new velocity {new_velocity}.")
         return new_start, new_velocity, -100
 
     # **Check for collision with a wall**
     if track[new_state[0], new_state[1]] == 1:
         new_start = np.array([0, np.random.choice(a=start_cols, size=1)[0]])  # Reset to start line
         new_velocity[:] = 0 
-        _logger.debug(f"COLLISION detected at {new_state}. Resetting to start position {new_start}.")
+        _logger.debug(f"COLLISION detected at {new_state}. Resetting to start position {new_start} with new velocity {new_velocity}.")
         return new_start, new_velocity, -100  # Large negative reward
 
     # **Check if the car has reached the finish line**
@@ -418,6 +418,7 @@ def run(args):
     p_s = greedy
     b = e_soft
 
+    division_epsilon = 1e-8  # Small value to prevent division by zero
     for episode in trange(max_episodes):
 
         episode_states, episode_actions, episode_rewards, episode_action_probability = create_episode(
@@ -434,23 +435,24 @@ def run(args):
         G = 0 
         W = 1
 
-        for state, action, reward, prob in zip(reversed(episode_states), reversed(episode_actions), reversed(episode_rewards), reversed(episode_action_probability)):
-            G = discount_factor * G + reward
-            Counts[state[0], state[1], get_action_index(action)] += W 
-            Q[state[0], state[1], get_action_index(action)] += (
-                W / Counts[state[0], state[1], get_action_index(action)]
-            ) * (G - Q[state[0], state[1], get_action_index(action)])
+        for i in reversed(range(len(episode_states))):
+            G = discount_factor * G + episode_rewards[i]
+            action_index = get_action_index(episode_actions[i])
+            Counts[episode_states[i][0], episode_states[i][1], action_index] += W 
+            Q[episode_states[i][0], episode_states[i][1], action_index] += (
+                W / (Counts[episode_states[i][0], episode_states[i][1], action_index] + division_epsilon)
+            ) * (G - Q[episode_states[i][0], episode_states[i][1], action_index])
 
 
-            best_action = p_s(state=state, Q=Q, actions=actions)
+            best_action = p_s(state=episode_states[i], Q=Q, actions=actions)
             _logger.debug(f"Best action using greedy policy: {best_action}")
-            _logger.debug(f"Current action: {action}")
-            if np.array_equal(action, best_action): 
+            _logger.debug(f"Current action: {episode_actions[i]}")
+            if np.array_equal(episode_actions[i], best_action): 
                 _logger.info("Breaking from inner loop. Current action is the best action.")
                 break
 
             # 9 actions with equal probability by the behavior policy
-            W *= prob
+            W *= episode_action_probability[i]
 
     plot_q_value_convergence(Q)  # Show learned Q-values
     plot_policy(Q, actions)  # Show best actions
