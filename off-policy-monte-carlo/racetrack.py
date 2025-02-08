@@ -130,6 +130,7 @@ def e_soft(
     return action, probabilities[action_index]
 
 def uniform(
+    epsilon: float, 
     state: Tuple[int, int],
     Q: np.ndarray,
     actions: np.ndarray
@@ -391,7 +392,7 @@ def create_episode(
         track=track,
     )
 
-    trajectory = [initial_state.copy()]  # Track the agent's positions
+    trajectory = [initial_state]  # Track the agent's positions
     while track[state[0], state[1]] != 2: 
         episode_rewards.append(reward)
         episode_states.append(state)
@@ -415,7 +416,7 @@ def create_episode(
 
     # Append the last reward of the Terminal State
     episode_rewards.append(reward)
-    trajectory.append(state.copy())  # Final position
+    trajectory.append(state)  # Final position
 
     return episode_states, episode_actions, episode_rewards, episode_action_probability, trajectory
 
@@ -434,7 +435,8 @@ def run(args):
     Q = np.zeros((rows, cols, len(actions)))
     Counts = np.zeros((rows, cols, len(actions)))
     p_s = greedy
-    b = e_soft
+    #b = e_soft 
+    b = uniform
 
     timesteps_per_episode = []  # Track timesteps per episode
     division_epsilon = 1e-8  # Small value to prevent division by zero
@@ -475,7 +477,7 @@ def run(args):
 
         # Plot trajectory for the current episode
         if episode == max_episodes - 1:  # Plot for the last episode
-            plot_trajectory(track, trajectory, file_name=f"trajectory_episode_{episode + 1}.png")
+            plot_trajectory(Q=Q, actions=actions, track=track, file_name=f"trajectory_refined.png")
 
     # Plot cumulative timesteps vs episodes after training
     plot_cumulative_timesteps(timesteps_per_episode, file_name="cumulative_timesteps.png")
@@ -483,7 +485,6 @@ def run(args):
 
 
 import matplotlib.pyplot as plt
-import seaborn as sns
 
 def plot_cumulative_timesteps(timesteps_per_episode, file_name="cumulative_timesteps.png"):
     """
@@ -505,61 +506,53 @@ def plot_cumulative_timesteps(timesteps_per_episode, file_name="cumulative_times
     plt.savefig(file_name)
     plt.close()
 
-import matplotlib.colors as mcolors
+def plot_trajectory(Q, actions, track, file_name="trajectory_refined.png"):
 
-def plot_trajectory(track, trajectory, file_name="trajectory_refined.png"):
-    """
-    Plots the agent's refined trajectory on the track.
+    fig = plt.figure(figsize=(12, 8), dpi=150)
+    fig.suptitle("Sample Trajectories from 10 Random Restarts", size=12, weight="bold")
 
-    Parameters:
-    - track: np.ndarray -> The grid track with boundaries, start, and finish.
-    - trajectory: List[Tuple[int, int]] -> Sequence of states visited by the agent.
-    - file_name: str -> Name of the file to save the plot.
-    """
-    import matplotlib.colors as mcolors
+    for i in range(10):
+        # Reset to random starting position
+        state = np.array([0, np.random.choice(a=start_cols, size=1)[0]])
+        velocity = np.array([0, 0])
+        terminated = False
 
-    # Define a custom colormap for the track
-    cmap = mcolors.ListedColormap(["white", "blue", "red"])
-    bounds = [-0.5, 0.5, 1.5, 2.5]
-    norm = mcolors.BoundaryNorm(bounds, cmap.N)
+        # Store trajectory for this random restart
+        random_trajectory = [state.tolist()]
+        steps = 0
 
-    plt.figure(figsize=(12, 8))
+        while track[state[0], state[1]] != 2 and steps < 100:  # Simulate up to 100 steps
+            action = greedy(state=state, Q=Q, actions=actions)
+            state, velocity, _ = step(state, velocity, action, actions, track)
 
-    # Plot the track
-    plt.imshow(track.T, cmap=cmap, norm=norm, origin="upper", interpolation="nearest")
+            random_trajectory.append(state.tolist())  # Append state to trajectory
 
-    # Extract trajectory positions, skipping duplicates
-    unique_trajectory = [trajectory[0]]
-    for i in range(1, len(trajectory)):
-        if not np.array_equal(trajectory[i], trajectory[i - 1]):
-            unique_trajectory.append(trajectory[i])
+            steps += 1
 
-    trajectory_x, trajectory_y = zip(*unique_trajectory)  # Correct coordinates
+        # Plot the trajectory on the corresponding subplot
+        ax = plt.subplot(2, 5, i + 1)
+        ax.axis("off")
+        ax.imshow(track, cmap="PuBuGn", origin="upper")
+        ax.plot(
+            [pos[1] for pos in random_trajectory],
+            [pos[0] for pos in random_trajectory],
+            color="yellow", linewidth=1.5, alpha=0.8, label="Trajectory"
+        )
+        ax.scatter(
+            random_trajectory[0][1], random_trajectory[0][0],
+            color="green", label="Start", s=20
+        )
+        ax.scatter(
+            random_trajectory[-1][1], random_trajectory[-1][0],
+            color="red", label="End", s=20
+        )
+        ax.set_title(f"Restart {i + 1}", fontsize=10)
 
-    # Plot the trajectory path
-    plt.plot(
-        trajectory_y, trajectory_x,
-        color="yellow", linewidth=1.5, alpha=0.7, label="Trajectory"
-    )
-
-    # Optionally highlight resets
-    for i in range(1, len(unique_trajectory)):
-        if unique_trajectory[i][0] == 0:  # If reset to start
-            plt.scatter(
-                unique_trajectory[i][1], unique_trajectory[i][0],
-                color="orange", s=20, label="Reset" if i == 1 else None
-            )
-
-    # Add labels and formatting
-    plt.title("Refined Agent's Trajectory on the Track")
-    plt.xlabel("Columns")
-    plt.ylabel("Rows")
-    plt.legend(loc="upper left")
-    plt.grid(color="gray", linestyle="--", linewidth=0.5, alpha=0.7)
-
-    plt.gca().invert_yaxis()  # Invert y-axis for proper alignment
+    plt.tight_layout()
+    plt.legend(loc="upper left", fontsize=6)
     plt.savefig(file_name)
-    plt.close()
+    plt.show()
+
 
 
 
