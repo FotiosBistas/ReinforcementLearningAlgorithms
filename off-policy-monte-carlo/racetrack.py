@@ -101,6 +101,7 @@ def create_episode(
         velocity=episode_velocity, 
         action=initial_action,
         track=track,
+        start_cells=start_cells,
     )
 
     while track[state[0], state[1]] != 2: 
@@ -119,6 +120,7 @@ def create_episode(
             velocity=episode_velocity, 
             action=action,
             track=track,
+            start_cells=start_cells,
         )
 
     # Append the last reward of the Terminal State
@@ -181,7 +183,7 @@ def run(args):
 
         # Plot trajectory for the current episode
         if episode == max_episodes - 1:  # Plot for the last episode
-            plot_trajectory(Q=Q, actions=actions, track=track, file_name=f"trajectory_refined.png")
+            plot_trajectory(Q=Q, actions=actions, track=track, start_cells=start_cells, file_name=f"trajectory_refined.png")
 
     # Plot cumulative timesteps vs episodes after training
     plot_cumulative_timesteps(timesteps_per_episode, file_name="cumulative_timesteps.png")
@@ -192,6 +194,7 @@ def step(
     velocity: Tuple[int, int], 
     action: Tuple[int,int], 
     track: np.array,
+    start_cells: List[np.array],
 ) -> Tuple[Tuple[int, int], Tuple[int, int], int]:
 
     # Convert inputs to NumPy arrays for easy operations
@@ -217,14 +220,14 @@ def step(
 
     # **Return immediately if out of bounds**
     if not (0 <= new_state[0] < track.shape[0]) or not (0 <= new_state[1] < track.shape[1]):
-        new_start = np.array([0, np.random.choice(a=start_cols, size=1)[0]])  # Reset to start line
+        new_start = start_cells[np.random.choice(len(start_cells))]
         new_velocity[:] = 0
         _logger.debug(f"OUT OF BOUNDS DETECTED: {new_state}. Resetting to start position {new_start} with new velocity {new_velocity}.")
         return new_start, new_velocity, -100
 
     # **Check for collision with a wall**
     if track[new_state[0], new_state[1]] == 1:
-        new_start = np.array([0, np.random.choice(a=start_cols, size=1)[0]])  # Reset to start line
+        new_start = start_cells[np.random.choice(len(start_cells))]
         new_velocity[:] = 0 
         _logger.debug(f"COLLISION detected at {new_state}. Resetting to start position {new_start} with new velocity {new_velocity}.")
         return new_start, new_velocity, -100  # Large negative reward
@@ -495,7 +498,7 @@ def plot_cumulative_timesteps(timesteps_per_episode, file_name="cumulative_times
     plt.savefig(file_name)
     plt.close()
 
-def plot_trajectory(Q, actions, track, file_name="trajectory_refined.png"):
+def plot_trajectory(Q, actions, track, start_cells, file_name="trajectory_refined.png"):
 
     fig = plt.figure(figsize=(12, 8), dpi=150)
     fig.suptitle("Sample Trajectories from 10 Random Restarts", size=12, weight="bold")
@@ -504,7 +507,7 @@ def plot_trajectory(Q, actions, track, file_name="trajectory_refined.png"):
     for i in range(10):
         _logger.info(f"Simulating timestep {i}")
         # Reset to random starting position
-        state = np.array([0, np.random.choice(a=start_cols, size=1)[0]])
+        state = start_cells[np.random.choice(len(start_cells))]
         velocity = np.array([0, 0])
 
         # Store trajectory for this random restart
@@ -517,7 +520,8 @@ def plot_trajectory(Q, actions, track, file_name="trajectory_refined.png"):
                 state=state, 
                 velocity=velocity, 
                 action=action, 
-                track=track
+                track=track,
+                start_cells=start_cells,
             )
 
             random_trajectory.append(state.tolist())  # Append state to trajectory
