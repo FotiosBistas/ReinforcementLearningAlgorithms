@@ -46,30 +46,151 @@ track[0:3, 2] = 1
 track[0:26, 9:] = 1
 track[25, 9] = 0  
 
+
+track = np.flipud(track)
+
 # Define start and finish line positions
 start_cols = list(range(3, 9))  # Columns 4 to 9
-fin_cells = {
-    (26, cols-1),
-    (27, cols-1),
-    (28, cols-1),
-    (29, cols-1),
-    (30, cols-1),
-    (31, cols-1),
-}  # Finish line cells
+start_cells = [
+    np.array([track.shape[0] - 1, i]) for i in start_cols
+]
+fin_cells = [
+    np.array([i, cols-1]) for i in range(0, 6)
+]  # Finish line cells
+
+_logger.info(f"Start cells: {start_cells}")
+_logger.info(f"Fin cells: {fin_cells}")
 
 # Convert finish line positions to track representation
 for r, c in fin_cells:
     track[r, c] = 2  # Mark finish cells with 2
 
 # Print the track for debugging
-_logger.debug(track)
+_logger.info(f"Track:\n{track}")
+
+def create_episode(
+    epsilon: float,
+    Q: np.array,
+    track: np.array, 
+    actions: List[np.array],
+    start_cells: List[np.array],
+    behavior_policy: Callable,
+):
+    episode_states = []
+    episode_actions = []
+    episode_action_probability = []
+    episode_rewards = []
+
+    episode_velocity = np.array([0, 0])
+
+    # Initial states are in the start of the Track array
+    initial_state = start_cells[np.random.choice(len(start_cells))]
+    _logger.debug(f"Starting from state: {initial_state}")
+    initial_action, action_prob = behavior_policy(
+        epsilon=epsilon, 
+        q_values=Q[initial_state[0], initial_state[1], :], 
+        actions=actions,
+    )
+
+    episode_states.append(initial_state)
+    episode_actions.append(initial_action)
+    episode_action_probability.append(action_prob)
+
+    state, episode_velocity, reward = step(
+        state=initial_state,
+        velocity=episode_velocity, 
+        action=initial_action,
+        track=track,
+    )
+
+    while track[state[0], state[1]] != 2: 
+        episode_rewards.append(reward)
+        episode_states.append(state)
+
+        action, action_prob = behavior_policy(
+            epsilon=epsilon,
+            q_values=Q[state[0], state[1], :],
+            actions=actions,
+        )
+        episode_actions.append(action)
+        episode_action_probability.append(action_prob)
+        state, episode_velocity, reward = step(
+            state=state,
+            velocity=episode_velocity, 
+            action=action,
+            track=track,
+        )
+
+    # Append the last reward of the Terminal State
+    episode_rewards.append(reward)
+
+    return episode_states, episode_actions, episode_rewards, episode_action_probability
+
+def run(args): 
+    global actions
+    global track
+    global start_cells
+    global fin_cells
+
+    max_episodes = args.max_episodes
+    discount_factor = args.discount_factor
+    epsilon = args.epsilon
+
+    Q = np.ones((rows, cols, len(actions))) * -200
+    Counts = np.zeros((rows, cols, len(actions)))
+    p_s = greedy
+    b = e_soft 
+    #b = uniform
+
+    timesteps_per_episode = []  # Track timesteps per episode
+    division_epsilon = 1e-8  # Small value to prevent division by zero
+
+    for episode in trange(max_episodes):
+        episode_states, episode_actions, episode_rewards, episode_action_probability = create_episode(
+            epsilon=epsilon, 
+            Q=Q, 
+            actions=actions,
+            track=track,
+            start_cells=start_cells,
+            behavior_policy=b,
+        )
+
+        timesteps_per_episode.append(len(episode_states))  # Record timesteps
+
+        _logger.info(f"Created episode successfully")
+
+        G = 0 
+        W = 1
+
+        for i in reversed(range(len(episode_states))):
+            G = discount_factor * G + episode_rewards[i]
+            action_index = get_action_index(episode_actions[i])
+            Counts[episode_states[i][0], episode_states[i][1], action_index] += W 
+            Q[episode_states[i][0], episode_states[i][1], action_index] += (
+                W / (Counts[episode_states[i][0], episode_states[i][1], action_index] + division_epsilon)
+            ) * (G - Q[episode_states[i][0], episode_states[i][1], action_index])
+
+            best_action = p_s(Q[episode_states[i][0], episode_states[i][1], :], actions=actions)
+            _logger.debug(f"Best action using greedy policy: {best_action}")
+            _logger.debug(f"Current action: {episode_actions[i]}")
+            if np.array_equal(episode_actions[i], best_action): 
+                _logger.info("Breaking from inner loop. Current action is the best action.")
+                break
+
+            W *= episode_action_probability[i]
+
+        # Plot trajectory for the current episode
+        if episode == max_episodes - 1:  # Plot for the last episode
+            plot_trajectory(Q=Q, actions=actions, track=track, file_name=f"trajectory_refined.png")
+
+    # Plot cumulative timesteps vs episodes after training
+    plot_cumulative_timesteps(timesteps_per_episode, file_name="cumulative_timesteps.png")
 
 
 def step(
     state: Tuple[int, int], 
     velocity: Tuple[int, int], 
     action: Tuple[int,int], 
-    actions: List[np.array],
     track: np.array,
 ) -> Tuple[Tuple[int, int], Tuple[int, int], int]:
 
@@ -80,13 +201,19 @@ def step(
 
     # Update velocity with acceleration
     new_velocity = velocity + action
-    new_velocity = np.clip(new_velocity, -MAX_SPEED, MAX_SPEED)
+    new_velocity = np.clip(new_velocity, 0, MAX_SPEED)
 
     _logger.debug(f"Current state: {state}")
     _logger.debug(f"Updated velocity from: {velocity} to {new_velocity}")
 
     # Update position with new velocity
-    new_state = state + new_velocity
+    new_state = np.array([state[0] - new_velocity[0], state[1] + velocity[1]])
+
+    # **Check if the car has reached the finish line or has surpassed it**
+    if track[new_state[0], min(new_state[1], track.shape[1] - 1)] == 2:
+        _logger.debug("FINISH LINE REACHED!")
+        new_state = np.array([np.clip(new_state[0], 0, track.shape[0] - 1),np.clip(new_state[1], 0, track.shape[1] - 1)])
+        return new_state, new_velocity, 0  # Reached finish line
 
     # **Return immediately if out of bounds**
     if not (0 <= new_state[0] < track.shape[0]) or not (0 <= new_state[1] < track.shape[1]):
@@ -102,26 +229,20 @@ def step(
         _logger.debug(f"COLLISION detected at {new_state}. Resetting to start position {new_start} with new velocity {new_velocity}.")
         return new_start, new_velocity, -100  # Large negative reward
 
-    # **Check if the car has reached the finish line**
-    if track[new_state[0], new_state[1]] == 2:
-        _logger.debug("FINISH LINE REACHED!")
-        return new_state, new_velocity, 0  # Reached finish line
-
     # **Normal step with small penalty for each move**
     _logger.debug(f"VALID MOVE: Moving to {new_state} from {state}. Continuing the race.")
     return new_state, new_velocity, -1
 
 def e_soft(
     epsilon: float, 
-    state: Tuple[int, int],
-    Q: np.ndarray,
-    actions: np.ndarray
+    q_values: np.array,
+    actions: np.array,
 ):
     """
     ε-soft policy: Returns an action and its probability of being chosen.
     """
     probabilities = np.ones(len(actions)) * (epsilon / len(actions))  # Exploration probabilities
-    best_action_index = np.argmax(Q[state[0], state[1], :])  # Greedy action index
+    best_action_index = np.argmax(q_values)  # Greedy action index
     probabilities[best_action_index] += 1 - epsilon  # Assign higher probability to greedy action
 
     # Sample action according to probabilities
@@ -130,9 +251,6 @@ def e_soft(
     return action, probabilities[action_index]
 
 def uniform(
-    epsilon: float, 
-    state: Tuple[int, int],
-    Q: np.ndarray,
     actions: np.ndarray
 ):
     """
@@ -146,19 +264,16 @@ def uniform(
     return action, probabilities[action_index]
 
 def greedy(
-    state: Tuple[int, int],
-    Q: np.ndarray, 
-    actions: np.ndarray
-):
+    q_values: np.array,
+    actions: np.array,
+) -> Tuple[int, float]:
     """
-    Greedy policy: Returns the action with the highest Q-value.
+    Greedy policy: Returns the action with the highest Q-value and its probability.
     """
     # Exploitation: Choose the best action(s)
-    current_action_values_ = Q[state[0], state[1], :]
-    best_action_index = np.argmax(current_action_values_)  # Single max computation
+    best_action_index = np.argmax(q_values)  # Single max computation
     action = actions[best_action_index]
-    _logger.debug(f"Greedy action for state {state}: {action}")
-    return action
+    return action, 1
 
 
 def get_action_index(action: np.array):
@@ -355,132 +470,6 @@ def test_greedy_tiebreak():
         assert not(action[0] == 1 and action[1] == -1), f"Greedy tiebreak failed with seed {seed}, got {action}"
 
 
-def create_episode(
-    epsilon: float,
-    Q: np.array,
-    track: np.array, 
-    actions: List[np.array],
-    start_cols: List[int],
-    behavior_policy: Callable,
-):
-    episode_states = []
-    episode_actions = []
-    episode_action_probability = []
-    episode_rewards = []
-
-    episode_velocity = np.array([0, 0])
-
-    # Initial states are in the start of the Track array
-    initial_state = np.array([0, np.random.choice(a=start_cols, size=1)[0]])
-    _logger.debug(f"Starting from state: {initial_state}")
-    initial_action, action_prob = behavior_policy(
-        epsilon=epsilon, 
-        state=initial_state, 
-        Q=Q, 
-        actions=actions,
-    )
-
-    episode_states.append(initial_state)
-    episode_actions.append(initial_action)
-    episode_action_probability.append(action_prob)
-
-    state, episode_velocity, reward = step(
-        state=initial_state,
-        velocity=episode_velocity, 
-        action=initial_action,
-        actions=actions, 
-        track=track,
-    )
-
-    trajectory = [initial_state]  # Track the agent's positions
-    while track[state[0], state[1]] != 2: 
-        episode_rewards.append(reward)
-        episode_states.append(state)
-        trajectory.append(state.copy())  # Append position to trajectory
-
-        action, action_prob = behavior_policy(
-            epsilon=epsilon,
-            state=state, 
-            Q=Q,
-            actions=actions,
-        )
-        episode_actions.append(action)
-        episode_action_probability.append(action_prob)
-        state, episode_velocity, reward = step(
-            state=state,
-            velocity=episode_velocity, 
-            action=action,
-            actions=actions, 
-            track=track,
-        )
-
-    # Append the last reward of the Terminal State
-    episode_rewards.append(reward)
-    trajectory.append(state)  # Final position
-
-    return episode_states, episode_actions, episode_rewards, episode_action_probability, trajectory
-
-
-
-
-def run(args): 
-    global actions
-    global track
-    global start_cols
-
-    max_episodes = args.max_episodes
-    discount_factor = args.discount_factor
-    epsilon = args.epsilon
-
-    Q = np.zeros((rows, cols, len(actions)))
-    Counts = np.zeros((rows, cols, len(actions)))
-    p_s = greedy
-    b = e_soft 
-    #b = uniform
-
-    timesteps_per_episode = []  # Track timesteps per episode
-    division_epsilon = 1e-8  # Small value to prevent division by zero
-
-    for episode in trange(max_episodes):
-        episode_states, episode_actions, episode_rewards, episode_action_probability, trajectory = create_episode(
-            epsilon=epsilon, 
-            Q=Q, 
-            actions=actions,
-            track=track,
-            start_cols=start_cols,
-            behavior_policy=b,
-        )
-
-        timesteps_per_episode.append(len(episode_states))  # Record timesteps
-
-        _logger.info(f"Created episode successfully")
-
-        G = 0 
-        W = 1
-
-        for i in reversed(range(len(episode_states))):
-            G = discount_factor * G + episode_rewards[i]
-            action_index = get_action_index(episode_actions[i])
-            Counts[episode_states[i][0], episode_states[i][1], action_index] += W 
-            Q[episode_states[i][0], episode_states[i][1], action_index] += (
-                W / (Counts[episode_states[i][0], episode_states[i][1], action_index] + division_epsilon)
-            ) * (G - Q[episode_states[i][0], episode_states[i][1], action_index])
-
-            best_action = p_s(state=episode_states[i], Q=Q, actions=actions)
-            _logger.debug(f"Best action using greedy policy: {best_action}")
-            _logger.debug(f"Current action: {episode_actions[i]}")
-            if np.array_equal(episode_actions[i], best_action): 
-                _logger.info("Breaking from inner loop. Current action is the best action.")
-                break
-
-            W *= episode_action_probability[i]
-
-        # Plot trajectory for the current episode
-        if episode == max_episodes - 1:  # Plot for the last episode
-            plot_trajectory(Q=Q, actions=actions, track=track, file_name=f"trajectory_refined.png")
-
-    # Plot cumulative timesteps vs episodes after training
-    plot_cumulative_timesteps(timesteps_per_episode, file_name="cumulative_timesteps.png")
 
 
 
@@ -508,8 +497,6 @@ def plot_cumulative_timesteps(timesteps_per_episode, file_name="cumulative_times
 
 def plot_trajectory(Q, actions, track, file_name="trajectory_refined.png"):
 
-    policy = np.argmax(Q, axis=-1)
-
     fig = plt.figure(figsize=(12, 8), dpi=150)
     fig.suptitle("Sample Trajectories from 10 Random Restarts", size=12, weight="bold")
 
@@ -525,10 +512,13 @@ def plot_trajectory(Q, actions, track, file_name="trajectory_refined.png"):
         steps = 0
 
         while track[state[0], state[1]] != 2 and steps < 1000:  # Simulate up to 1000 steps
-            action_index = policy[state[0], state[1]]  # Select action from greedy policy
-            action = actions[action_index]
-            action = greedy(state=state, Q=Q, actions=actions)
-            state, velocity, _ = step(state, velocity, action, actions, track)
+            action, _ = greedy(q_values=Q[state[0], state[1], :], actions=actions)
+            state, velocity, _ = step(
+                state=state, 
+                velocity=velocity, 
+                action=action, 
+                track=track
+            )
 
             random_trajectory.append(state.tolist())  # Append state to trajectory
 
@@ -596,6 +586,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    pytest.main()
+    #pytest.main()
 
     run(args=args)
