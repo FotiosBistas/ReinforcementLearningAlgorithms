@@ -69,10 +69,9 @@ def step(
     state: Tuple[int, int], 
     velocity: Tuple[int, int], 
     action: Tuple[int,int], 
+    actions: List[np.array],
+    track: np.array,
 ) -> Tuple[Tuple[int, int], Tuple[int, int], int]:
-
-    global track
-    global actions
 
     # Convert inputs to NumPy arrays for easy operations
     state = np.array(state)
@@ -92,14 +91,14 @@ def step(
     # **Return immediately if out of bounds**
     if not (0 <= new_state[0] < track.shape[0]) or not (0 <= new_state[1] < track.shape[1]):
         new_start = np.array([0, np.random.choice(a=start_cols, size=1)[0]])  # Reset to start line
-        new_velocity = np.array([0, 0])
+        new_velocity[:] = 0
         _logger.debug(f"OUT OF BOUNDS DETECTED: {new_state}. Resetting to start position {new_start}.")
         return new_start, new_velocity, -100
 
     # **Check for collision with a wall**
     if track[new_state[0], new_state[1]] == 1:
         new_start = np.array([0, np.random.choice(a=start_cols, size=1)[0]])  # Reset to start line
-        new_velocity = np.array([0, 0])
+        new_velocity[:] = 0 
         _logger.debug(f"COLLISION detected at {new_state}. Resetting to start position {new_start}.")
         return new_start, new_velocity, -100  # Large negative reward
 
@@ -115,41 +114,34 @@ def step(
 def e_soft(
     epsilon: float, 
     state: Tuple[int, int],
-    Q: np.array,
-    actions: np.array
+    Q: np.ndarray,
+    actions: np.ndarray
 ):
-    probability = 0
-    # Choose action using policy derived from Q
-    if np.random.random() < epsilon: 
-        action_index = np.random.choice(a=len(actions))
-        action = actions[action_index]
-        _logger.debug(f"Randomly chose action: {action}")
-        probability = epsilon/len(actions)
-    else:
-        action = greedy(
-            state=state,
-            Q=Q,
-            actions=actions,
-        )
+    """
+    ε-soft policy: Returns an action and its probability of being chosen.
+    """
+    probabilities = np.ones(len(actions)) * (epsilon / len(actions))  # Exploration probabilities
+    best_action_index = np.argmax(Q[state[0], state[1], :])  # Greedy action index
+    probabilities[best_action_index] += 1 - epsilon  # Assign higher probability to greedy action
 
-        probability = 1 - epsilon + epsilon/len(actions)
-
-    return action, probability
+    # Sample action according to probabilities
+    action_index = np.random.choice(len(actions), p=probabilities)
+    action = actions[action_index]
+    return action, probabilities[action_index]
 
 def greedy(
     state: Tuple[int, int],
-    Q: np.array, 
-    actions: np.array
+    Q: np.ndarray, 
+    actions: np.ndarray
 ):
-    # Exploitation: Choose the best action(s), including handling of zero Q-values
+    """
+    Greedy policy: Returns the action with the highest Q-value.
+    """
+    # Exploitation: Choose the best action(s)
     current_action_values_ = Q[state[0], state[1], :]
-    _logger.debug(f"Current action values in state:\nAction Values: {current_action_values_}\nState: {state}")
-    # Find indices of actions with the maximum Q-value (handles zero-Q values naturally)
-    best_action_indices = np.flatnonzero(current_action_values_ == np.max(current_action_values_))
-    # Randomly choose among the best actions
-    action_index = np.random.choice(best_action_indices)
-    action = actions[action_index]
-    _logger.debug(f"Chose best action: {action}")
+    best_action_index = np.argmax(current_action_values_)  # Single max computation
+    action = actions[best_action_index]
+    _logger.debug(f"Greedy action for state {state}: {action}")
     return action
 
 
@@ -160,54 +152,96 @@ def get_action_index(action: np.array):
     return action_index
 
 def test_normal_move():
+    global track
+    global actions
+
     _logger.debug("TRACK:")
     _logger.debug(track)
     state = (3, 4)
     velocity = (0, 2)
     action = (0, 1)
-    new_state, new_velocity, reward = step(state, velocity, action)
+    new_state, new_velocity, reward = step(
+        state=state, 
+        velocity=velocity, 
+        action=action,
+        actions=actions,
+        track=track,
+    )
     assert reward == -1
-    assert new_velocity == (0, 3)
-    assert new_state == (3, 7)
+    assert np.array_equal(new_velocity, [0, 3])
+    assert np.array_equal(new_state, [3, 7])
 
 def test_out_of_bounds():
+    global track 
+    global actions
+
     _logger.debug("TRACK:")
     _logger.debug(track)
     state = (3, 15)
     velocity = (0, 2)
     action = (0, 1)
-    _, new_velocity, reward = step(state, velocity, action)
+    _, new_velocity, reward = step(
+        state=state, 
+        velocity=velocity, 
+        action=action,
+        actions=actions,
+        track=track,
+    )
     assert reward == -100
-    assert new_velocity == (0, 0)
+    assert np.array_equal(new_velocity, [0, 0])
 
 def test_collision():
+    global track 
+    global actions
     _logger.debug("TRACK:")
     _logger.debug(track)
     state = (2, 3)
     velocity = (0, -1)
     action = (0, 0)  # No acceleration, should hit wall
-    new_state, new_velocity, reward = step(state, velocity, action)
+    _, _, reward = step(
+        state=state, 
+        velocity=velocity, 
+        action=action,
+        actions=actions,
+        track=track,
+    )
     assert reward == -100
 
 def test_max_speed():
+    global track 
+    global actions
     _logger.debug("TRACK:")
     _logger.debug(track)
     state = (2, 3)
     velocity = (4, 4)
     action = (2, 2)  
-    new_state, new_velocity, reward = step(state, velocity, action)
+    new_state, new_velocity, reward = step(
+        state=state, 
+        velocity=velocity, 
+        action=action,
+        actions=actions,
+        track=track,
+    )
     assert reward == -1
-    assert new_velocity == (5, 5)
-    assert new_state == (7, 8)
+    assert np.array_equal(new_velocity, [5, 5])
+    assert np.array_equal(new_state, [7, 8])
 
 def test_finish_line():
+    global track 
+    global actions
     _logger.debug("TRACK:")
     _logger.debug(track)
     _logger.debug(track[track.shape[0] - 1])
     state = (31, 11)
     velocity = (0, 5)
     action = (0, 1)  # No acceleration, should reach finish
-    new_state, new_velocity, reward = step(state, velocity, action)
+    _, _, reward = step(
+        state=state, 
+        velocity=velocity, 
+        action=action,
+        actions=actions,
+        track=track,
+    )
     assert reward == 0
 
     
@@ -245,7 +279,12 @@ def test_e_soft(epsilon, expected_actions):
     _logger.debug(f"Expected actions: {expected_actions}")
     state = (0, 1)
     np.random.seed(42)  # Fix seed for reproducibility
-    action = e_soft(epsilon, state, Q, actions)
+    action, action_prob = e_soft(
+        epsilon=epsilon, 
+        state=state, 
+        Q=Q, 
+        actions=actions,
+    )
     _logger.debug(f"Produced action {action}")
 
     truth_values = np.array(action == expected_actions)
@@ -268,7 +307,11 @@ def test_greedy():
         ]   # Q-values for state (1,0) and (1,1)
     ])
     state = (0, 1)
-    action = greedy(state, Q, actions=actions)
+    action = greedy(
+        state=state, 
+        Q=Q, 
+        actions=actions,
+    )
 
     assert action[0] == -1 and action[1] == 0, f"Greedy function failed, expected [0, 0] or [1, 1], got {action}"
 
@@ -299,11 +342,11 @@ def test_greedy_tiebreak():
 def create_episode(
     epsilon: float,
     Q: np.array,
+    track: np.array, 
+    actions: List[np.array],
+    start_cols: List[int],
     behavior_policy: Callable,
 ):
-    global track
-    global actions
-    global start_cols
 
     episode_states = []
     episode_actions = []
@@ -330,6 +373,8 @@ def create_episode(
         state=initial_state,
         velocity=episode_velocity, 
         action=initial_action,
+        actions=actions, 
+        track=track,
     )
 
     while track[state[0], state[1]] != 2: 
@@ -347,6 +392,8 @@ def create_episode(
             state=state,
             velocity=episode_velocity, 
             action=action,
+            actions=actions, 
+            track=track,
         )
 
     # Append the last reward of the Terminal State
@@ -359,9 +406,12 @@ def create_episode(
 def run(args): 
 
     global actions
+    global track
+    global start_cols
 
     max_episodes = args.max_episodes
     discount_factor = args.discount_factor
+    epsilon = args.epsilon
 
     Q = np.zeros((rows, cols, len(actions)))
     Counts = np.zeros((rows, cols, (len(actions))))
@@ -370,7 +420,14 @@ def run(args):
 
     for episode in trange(max_episodes):
 
-        episode_states, episode_actions, episode_rewards, episode_action_probability = create_episode(epsilon=0.1, Q=Q, behavior_policy=b)
+        episode_states, episode_actions, episode_rewards, episode_action_probability = create_episode(
+            epsilon=epsilon, 
+            Q=Q, 
+            actions=actions,
+            track=track,
+            start_cols=start_cols,
+            behavior_policy=b,
+        )
 
         _logger.info(f"Created episode successfully")
 
@@ -395,7 +452,74 @@ def run(args):
             # 9 actions with equal probability by the behavior policy
             W *= prob
 
+    plot_q_value_convergence(Q)  # Show learned Q-values
+    plot_policy(Q, actions)  # Show best actions
+    #episode_states, _, _, _ = create_episode(epsilon=epsilon, Q=Q, behavior_policy=e_soft, start_cols=start_cols, track=track, actions=actions)
+    #plot_agent_path(episode_states)  # Show agent's movement
 
+
+import matplotlib.pyplot as plt
+
+def plot_q_value_convergence(Q):
+    """
+    Plots the maximum Q-value for each state over time.
+    """
+    q_values = np.max(Q, axis=2)  # Get max Q-value for each state
+    plt.figure(figsize=(10, 5))
+    plt.imshow(q_values, cmap="coolwarm", origin="upper")
+    plt.colorbar(label="Max Q-value")
+    plt.title("Q-value Heatmap for Each State")
+    plt.xlabel("Track Column")
+    plt.ylabel("Track Row")
+    plt.savefig("q_value_convergence.png")
+
+def plot_policy(Q, actions):
+    """
+    Plots the optimal policy as arrows on the racetrack.
+    """
+    policy_grid = np.zeros((Q.shape[0], Q.shape[1], 2))  # Stores best action vectors
+
+    for i in range(Q.shape[0]):
+        for j in range(Q.shape[1]):
+            if track[i, j] == 1:  # Wall
+                continue
+            best_action_index = np.argmax(Q[i, j, :])  # Best action index
+            policy_grid[i, j] = actions[best_action_index]  # Store action vector
+
+    plt.figure(figsize=(10, 5))
+    plt.imshow(track, cmap="gray", origin="upper")  # Show track
+    for i in range(Q.shape[0]):
+        for j in range(Q.shape[1]):
+            if track[i, j] == 1:
+                continue
+            plt.arrow(j, i, policy_grid[i, j, 1] * 0.4, -policy_grid[i, j, 0] * 0.4,
+                      head_width=0.3, head_length=0.3, fc='red', ec='red')
+
+    plt.title("Learned Policy (Best Actions)")
+    plt.xlabel("Track Column")
+    plt.ylabel("Track Row")
+    plt.savefig("optimal_policy.png")
+
+def plot_agent_path(episode_states):
+    """
+    Plots the agent's path on the racetrack.
+    """
+    plt.figure(figsize=(10, 5))
+    plt.imshow(track, cmap="gray", origin="upper")  # Show track
+    
+    # Extract x and y positions from states
+    x_positions = [s[1] for s in episode_states]
+    y_positions = [s[0] for s in episode_states]
+
+    plt.plot(x_positions, y_positions, marker="o", markersize=4, color="blue", label="Agent Path")
+    plt.scatter(x_positions[0], y_positions[0], color="green", s=100, label="Start")
+    plt.scatter(x_positions[-1], y_positions[-1], color="red", s=100, label="End")
+
+    plt.title("Agent Path on Racetrack")
+    plt.xlabel("Track Column")
+    plt.ylabel("Track Row")
+    plt.legend()
+    plt.savefig("agent_path.png")
 
 
 
