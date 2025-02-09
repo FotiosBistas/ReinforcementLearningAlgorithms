@@ -558,34 +558,35 @@ def plot_cumulative_timesteps(timesteps_per_episode, file_name="cumulative_times
 def plot_trajectory(Q, actions, track, start_cells, file_name="trajectory_refined.png"):
 
     fig = plt.figure(figsize=(12, 8), dpi=150)
-    fig.suptitle("Sample Trajectories from 10 Random Restarts using max 10000 timesteps", size=12, weight="bold")
+    fig.suptitle("Sample Trajectories from all starts using max 10000 timesteps", size=12, weight="bold")
 
     _logger.info("Creating trajectory based on the learned value function.")
-    for i in range(10):
-        _logger.info(f"Simulating trajectory {i}")
-        # Reset to random starting position
-        state = start_cells[np.random.choice(len(start_cells))]
+    # Loop over the starting positions with an index
+    for i, start_state in enumerate(start_cells):
+        _logger.info(f"Simulating trajectory from start state: {start_state}")
+        
+        # Copy the starting state into a current state variable and reset velocity
+        current_state = start_state.copy()
         velocity = np.array([0, 0])
-
+        
         # Store trajectory for this random restart
-        random_trajectory = [state.tolist()]
+        random_trajectory = [current_state.tolist()]
         steps = 0
 
-        while track[state[0], state[1]] != 2 and steps < 10000:  # Simulate up to 10000 steps
-            action, _ = greedy(q_values=Q[state[0], state[1], :], actions=actions)
-            state, velocity, _ = step(
-                state=state, 
+        while track[current_state[0], current_state[1]] != 2 and steps < 10000:  # Simulate up to 10000 steps
+            # Use the filtered set of actions if necessary
+            action, _ = greedy(q_values=Q[current_state[0], current_state[1], :], actions=actions)
+            current_state, velocity, _ = step(
+                state=current_state, 
                 velocity=velocity, 
                 action=action, 
                 track=track,
                 start_cells=start_cells,
             )
-
-            random_trajectory.append(state.tolist())  # Append state to trajectory
-
+            random_trajectory.append(current_state.tolist())  # Append new state to trajectory
             steps += 1
 
-        # Plot the trajectory on the corresponding subplot
+        # Plot the trajectory on a subplot using the index i+1
         ax = plt.subplot(2, 5, i + 1)
         ax.axis("off")
         ax.imshow(track, cmap="PuBuGn", origin="upper")
@@ -602,7 +603,7 @@ def plot_trajectory(Q, actions, track, start_cells, file_name="trajectory_refine
             random_trajectory[-1][1], random_trajectory[-1][0],
             color="red", label="End", s=20
         )
-        ax.set_title(f"Restart {i + 1} with steps: {steps}", fontsize=10)
+        ax.set_title(f"Restart {start_state.tolist()} with steps: {steps}", fontsize=10)
 
     plt.tight_layout()
     plt.legend(loc="upper left", fontsize=6)
