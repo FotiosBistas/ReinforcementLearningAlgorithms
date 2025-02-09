@@ -68,6 +68,32 @@ for r, c in fin_cells:
 # Print the track for debugging
 _logger.info(f"Track:\n{track}")
 
+def filter_states(
+    current_velocity: np.array,
+    all_actions: List[np.array],
+) -> List[np.array]:
+    """
+    Filters actions to ensure the resulting velocity:
+    1. Has no negative components.
+    2. Stays within the valid bounds (0 to MAX_SPEED).
+    3. Does not result in a velocity of [0, 0].
+
+    Parameters:
+    - current_velocity: np.array -> The current velocity of the agent.
+    - all_actions: List[np.array] -> A list of possible actions.
+
+    Returns:
+    - List[np.array] -> A filtered list of valid actions.
+    """
+    filtered_actions = [
+        action for action in all_actions 
+        if np.all((current_velocity + action) >= 0)           # No negative velocity components
+        and np.all((current_velocity + action) <= MAX_SPEED)  # Velocity within MAX_SPEED
+        and not np.array_equal(current_velocity + action, [0, 0])  # Resulting velocity != [0, 0]
+    ]
+
+    return filtered_actions
+
 def create_episode(
     epsilon: float,
     Q: np.array,
@@ -86,10 +112,16 @@ def create_episode(
     # Initial states are in the start of the Track array
     initial_state = start_cells[np.random.choice(len(start_cells))]
     _logger.debug(f"Starting from state: {initial_state}")
+
+    valid_actions = filter_states(
+        current_velocity=episode_velocity, 
+        all_actions=actions,    
+    )
+
     initial_action, action_prob = behavior_policy(
         epsilon=epsilon, 
         q_values=Q[initial_state[0], initial_state[1], :], 
-        actions=actions,
+        actions=valid_actions,
     )
 
     episode_states.append(initial_state)
@@ -108,13 +140,20 @@ def create_episode(
         episode_rewards.append(reward)
         episode_states.append(state)
 
+        valid_actions = filter_states(
+            current_velocity=episode_velocity, 
+            all_actions=actions,    
+        )
+
         action, action_prob = behavior_policy(
             epsilon=epsilon,
             q_values=Q[state[0], state[1], :],
-            actions=actions,
+            actions=valid_actions,
         )
+
         episode_actions.append(action)
         episode_action_probability.append(action_prob)
+
         state, episode_velocity, reward = step(
             state=state,
             velocity=episode_velocity, 
@@ -210,7 +249,7 @@ def step(
     _logger.debug(f"Updated velocity from: {velocity} to {new_velocity}")
 
     # Update position with new velocity
-    new_state = np.array([state[0] - new_velocity[0], state[1] + velocity[1]])
+    new_state = np.array([state[0] - new_velocity[0], state[1] + new_velocity[1]])
 
     # **Check if the car has reached the finish line or has surpassed it**
     if track[new_state[0], min(new_state[1], track.shape[1] - 1)] == 2:
@@ -239,44 +278,62 @@ def step(
 def e_soft(
     epsilon: float, 
     q_values: np.array,
-    actions: np.array,
+    actions: List[np.array],
 ):
     """
-    ε-soft policy: Returns an action and its probability of being chosen.
+    ε‑soft policy using filtered Q‑values.
     """
-    probabilities = np.ones(len(actions)) * (epsilon / len(actions))  # Exploration probabilities
-    best_action_index = np.argmax(q_values)  # Greedy action index
-    probabilities[best_action_index] += 1 - epsilon  # Assign higher probability to greedy action
-
-    # Sample action according to probabilities
-    action_index = np.random.choice(len(actions), p=probabilities)
-    action = actions[action_index]
-    return action, probabilities[action_index]
-
-def uniform(
-    actions: np.ndarray
-):
-    """
-    uniform policy: Returns an action and its probability of being chosen.
-    """
-
-    probabilities = np.ones(len(actions)) * 1/len(actions)
-    # Sample action according to probabilities
-    action_index = np.random.choice(len(actions))
-    action = actions[action_index]
-    return action, probabilities[action_index]
+    # Map each filtered action to its index in the full action set
+    valid_indices = [get_action_index(a) for a in actions]
+    
+    # Extract the corresponding Q‑values for these valid actions
+    valid_q_values = q_values[valid_indices]
+    
+    # Create probability distribution for the filtered actions only
+    num_valid = len(actions)
+    probabilities = np.ones(num_valid) * (epsilon / num_valid)
+    
+    # Find the index (within valid_q_values) of the best action
+    best_local_index = np.argmax(valid_q_values)
+    probabilities[best_local_index] += 1 - epsilon
+    
+    # Choose an action index from the filtered set
+    chosen_local_index = np.random.choice(num_valid, p=probabilities)
+    chosen_action = actions[chosen_local_index]
+    
+    return chosen_action, probabilities[chosen_local_index]
 
 def greedy(
     q_values: np.array,
-    actions: np.array,
-) -> Tuple[int, float]:
+    actions: List[np.array],
+) -> Tuple[np.array, float]:
     """
-    Greedy policy: Returns the action with the highest Q-value and its probability.
+    Greedy policy: Returns the action with the highest Q-value (from the filtered list)
+    and its probability (which is 1 since it is a greedy choice).
     """
-    # Exploitation: Choose the best action(s)
-    best_action_index = np.argmax(q_values)  # Single max computation
-    action = actions[best_action_index]
-    return action, 1
+    # Map each filtered action to its index in the full action set
+    valid_indices = [get_action_index(a) for a in actions]
+    # Extract the corresponding Q-values for these valid actions
+    valid_q_values = q_values[valid_indices]
+    # Find the index (within valid_q_values) of the best action
+    best_local_index = np.argmax(valid_q_values)
+    chosen_action = actions[best_local_index]
+    return chosen_action, 1.0
+
+def uniform(
+    actions: List[np.array],
+) -> Tuple[np.array, float]:
+    """
+    Uniform policy: Returns an action uniformly at random from the filtered list,
+    along with the probability of choosing that action.
+    """
+    num_valid = len(actions)
+    # Create a uniform probability distribution over the filtered actions
+    probabilities = np.ones(num_valid) * (1 / num_valid)
+    # Sample an index from the filtered list
+    chosen_local_index = np.random.choice(num_valid, p=probabilities)
+    chosen_action = actions[chosen_local_index]
+    return chosen_action, probabilities[chosen_local_index]
 
 
 def get_action_index(action: np.array):
